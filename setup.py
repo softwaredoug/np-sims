@@ -29,7 +29,7 @@ on numpy.distutils for more information.
 def configuration(parent_package='', top_path=None):
     from numpy.distutils.misc_util import Configuration
 
-    config = Configuration('npufunc_directory',
+    config = Configuration('doug_ufunc',
                            parent_package,
                            top_path)
     config.add_extension('npufunc', ['ufunc.c'])

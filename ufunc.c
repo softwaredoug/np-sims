@@ -3,7 +3,13 @@
 #include "numpy/ndarraytypes.h"
 #include "numpy/ufuncobject.h"
 #include "numpy/halffloat.h"
+#include "numpy/npy_math.h"
 #include <math.h>
+#include <stdio.h>
+
+#ifdef _MSC_VER
+#  include <intrin.h>   // for __popcnt
+#endif
 
 /*
  * multi_arg_logit.c
@@ -22,6 +28,14 @@ static PyMethodDef LogitMethods[] = {
     {NULL, NULL, 0, NULL}
 };
 
+static uint8_t popcount(uint64_t val) {
+#if (defined(__clang__) || defined(__GNUC__))
+    return __builtin_popcountll(val);
+#elif defined(_MSC_VER)
+    return (uint8_t) __popcnt64(val);
+#endif
+}
+
 /* The loop definition must precede the PyMODINIT_FUNC. */
 
 static void unshared_bits(char **args, const npy_intp *dimensions,
@@ -34,13 +48,14 @@ static void unshared_bits(char **args, const npy_intp *dimensions,
     npy_intp in1_step = steps[0], in2_step = steps[1];
     npy_intp out1_step = steps[2];
 
-    double tmp;
+    uint64_t xord = 0;
 
     for (i = 0; i < n; i++) {
         /* BEGIN main ufunc computation */
-        tmp = *(double *)in1;
-        tmp *= *(double *)in2;
-        *((double *)out1) = tmp;
+        xord = (*(uint64_t *)in1) ^ (*(uint64_t *)in2);
+        /* perform popcount */
+
+        *((uint8_t *)out1) = popcount(xord);
         // *((double *)out2) = log(tmp / (1 - tmp));
         /* END main ufunc computation */
 
@@ -82,9 +97,9 @@ PyMODINIT_FUNC PyInit_npufunc(void)
         return NULL;
     }
 
-    num_unshared = PyUFunc_FromFuncAndData(funcs, NULL, types, 3, 2, 1,
+    num_unshared = PyUFunc_FromFuncAndData(funcs, NULL, types, 1, 2, 1,
                                            PyUFunc_None, "num_unshared_bits",
-                                           "num_unshared_bits_dicstr", 0);
+                                           "num_unshared_bits_docstr", 0);
 
     d = PyModule_GetDict(m);
 
