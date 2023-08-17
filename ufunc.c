@@ -72,7 +72,7 @@ static void hamming(char **args, const npy_intp *dimensions,
     npy_intp i, j;
     npy_intp n = dimensions[0];
     npy_intp n1 = dimensions[1];  /* appears to be size of first dimension */
-    npy_intp n2 = dimensions[2]; /* appears to be size of second dimension */
+    npy_intp n2 = dimensions[2];  /* appears to be size of second dimension */
     char *in1 = args[0], *in2 = args[1], *in1_start = args[0], *in2_start = args[1];
     char *out1 = args[2];
 
@@ -90,17 +90,14 @@ static void hamming(char **args, const npy_intp *dimensions,
           /* perform popcount */
 
           sum += popcount(xord);
-          in2 += 8;
-          in1 += 8;
+          in2 += sizeof(uint64_t);
+          in1 += sizeof(uint64_t);
           /* printf("value1: %llu, value2: %llu, xord: %llu, sum: %llu\n", value1, value2, xord, sum); */
           /* END main ufunc computation */
         }
-        if (sum > 255) {
-          sum = 255;
-        }
-        (*((uint8_t *)out1)) = sum;
+        (*((uint64_t *)out1)) = sum;
 
-        out1 += 1;
+        out1 += sizeof(uint64_t);
     }
 }
 
@@ -112,6 +109,9 @@ PyUFuncGenericFunction hamming_funcs[1] = {&hamming};
 
 static char types[3] = {NPY_UINT64, NPY_UINT64,
                         NPY_UINT8};
+
+static char hamming_types[3] = {NPY_UINT64, NPY_UINT64,
+                                NPY_UINT64};
 
 static struct PyModuleDef moduledef = {
     PyModuleDef_HEAD_INIT,
@@ -145,7 +145,7 @@ PyMODINIT_FUNC PyInit_npufunc(void)
         printf("num_unshared is NULL!!\n");
     }
 
-    hamming_ufunc = PyUFunc_FromFuncAndDataAndSignature(hamming_funcs, NULL, types, 1, 2, 1,
+    hamming_ufunc = PyUFunc_FromFuncAndDataAndSignature(hamming_funcs, NULL, hamming_types, 1, 2, 1,
                                                   PyUFunc_None, "hamming",
                                                   "hamming_docstr", 0,
                                                   "(m,n),(n)->(m)");
