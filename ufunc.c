@@ -73,7 +73,7 @@ static void hamming(char **args, const npy_intp *dimensions,
     npy_intp n = dimensions[0];
     npy_intp n1 = dimensions[1];  /* appears to be size of first dimension */
     npy_intp n2 = dimensions[2]; /* appears to be size of second dimension */
-    char *in1 = args[0], *in2 = args[1];
+    char *in1 = args[0], *in2 = args[1], *in1_start = args[0], *in2_start = args[1];
     char *out1 = args[2];
 
     uint64_t xord = 0;
@@ -81,16 +81,18 @@ static void hamming(char **args, const npy_intp *dimensions,
     /* is dimension now what  we're accumulating over? */
     uint64_t sum = 0;
     for (i = 0; i < n1; i++) {
-        /* BEGIN main ufunc computation */
         sum = 0;
+        in2 = in2_start;
         for (j = 0; j < n2; j++) {
+          /* uint64_t value1 = (*(uint64_t *)in1);
+          uint64_t value2 = (*(uint64_t *)in2); */
           xord = (*(uint64_t *)in1) ^ (*(uint64_t *)in2);
           /* perform popcount */
 
           sum += popcount(xord);
-          in1 += 1;
-          in2 += 1;
-          // *((double *)out2) = log(tmp / (1 - tmp));
+          in2 += 8;
+          in1 += 8;
+          /* printf("value1: %llu, value2: %llu, xord: %llu, sum: %llu\n", value1, value2, xord, sum); */
           /* END main ufunc computation */
         }
         if (sum > 255) {
@@ -156,8 +158,6 @@ PyMODINIT_FUNC PyInit_npufunc(void)
     PyDict_SetItemString(d, "hamming", hamming_ufunc);
     Py_DECREF(num_unshared);
     Py_DECREF(hamming_ufunc);
-
-    printf("Returning");
 
     return m;
 }
