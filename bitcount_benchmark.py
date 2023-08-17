@@ -99,7 +99,7 @@ def hamming_sim_copy(hashes, query, count_function=bit_count64):
     # To make this faster, make a ufunc in C that counts dissimilar bits between query and hash`
 
     # To normalize
-    #np.divide(xor_sim, hashes.shape[1] * 64)
+    # np.divide(xor_sim, hashes.shape[1] * 64)
 
 
 def hamming_sim_nocopy(hashes, query, count_function=bit_count64):
@@ -128,7 +128,7 @@ def hamming_sim_nocopy(hashes, query, count_function=bit_count64):
     return xor_sim
 
 
-def hamming_with_ufunc(hashes, query):
+def hamming_ufunc_unshared_bits(hashes, query):
     xor_sim = num_unshared_bits(hashes, query)
     return np.sum(xor_sim,
                   axis=1)
@@ -149,10 +149,10 @@ def hamming_benchmark(rows=100000000, num_hashes=10, num_executions=10):
     print(f"Hamming: {rows} rows, {num_hashes} hashes per row")
 
     # Sanity check
-    sims = hamming_with_ufunc(hashes, query)
+    sims = hamming_ufunc_unshared_bits(hashes, query)
     assert sims[-1] == 0
     hashes_before = hashes.copy()
-    runtime = timeit.timeit(lambda: hamming_with_ufunc(hashes, query), number=num_executions)
+    runtime = timeit.timeit(lambda: hamming_ufunc_unshared_bits(hashes, query), number=num_executions)
     print("Custom Ufunc - just bc  : ", runtime / num_executions)
     assert np.all(hashes == hashes_before), "Hamming w/ np.bitwise_count was destructive"
 
@@ -165,6 +165,7 @@ def hamming_benchmark(rows=100000000, num_hashes=10, num_executions=10):
     assert np.all(hashes == hashes_before), "Hamming w/ np.bitwise_count was destructive"
     return
 
+# -----------------------------------------------
 # Stats from previous run
 #
 # Hamming: 100000000 rows, 10 hashes per row
@@ -175,6 +176,7 @@ def hamming_benchmark(rows=100000000, num_hashes=10, num_executions=10):
 # --- custom ufuncs
 # Custom Ufunc - just bc  :  2.584149041690398
 # Custom Ufunc - full ham :  0.3731657250085846
+
 
 if __name__ == '__main__':
     # bitcount_benchmark()
