@@ -1,6 +1,6 @@
 import timeit
 import numpy as np
-from doug_ufunc import num_unshared_bits
+from doug_ufunc import num_unshared_bits, hamming as hamming_c_ufunc
 
 # Naive bitcount implementation without popcount
 
@@ -134,7 +134,7 @@ def hamming_with_ufunc(hashes, query):
                   axis=1)
 
 
-def hamming_benchmark(rows=100000000, num_hashes=10, num_executions=100):
+def hamming_benchmark(rows=100000, num_hashes=10, num_executions=10):
     """Benchmark hamming similarity."""
     arr_size = (rows, num_hashes)
     max_val = np.iinfo(np.uint64).max
@@ -148,12 +148,21 @@ def hamming_benchmark(rows=100000000, num_hashes=10, num_executions=100):
     hashes[-2][0] = 0
     print(f"Hamming: {rows} rows, {num_hashes} hashes per row")
 
-    hashes_before = hashes.copy()
-    runtime = timeit.timeit(lambda: hamming_with_ufunc(hashes, query), number=num_executions)
-    print("Custom Ufunc  : ", runtime / num_executions)
-    assert np.all(hashes == hashes_before), "Hamming w/ np.bitwise_count was destructive"
+    # Sanity check
     sims = hamming_with_ufunc(hashes, query)
     assert sims[-1] == 0
+    hashes_before = hashes.copy()
+    runtime = timeit.timeit(lambda: hamming_with_ufunc(hashes, query), number=num_executions)
+    print("Custom Ufunc - just bc  : ", runtime / num_executions)
+    assert np.all(hashes == hashes_before), "Hamming w/ np.bitwise_count was destructive"
+
+    # Sanity check
+    sims = hamming_c_ufunc(hashes, query)
+    assert sims[-1] == 0
+    hashes_before = hashes.copy()
+    runtime = timeit.timeit(lambda: hamming_c_ufunc(hashes, query), number=num_executions)
+    print("Custom Ufunc - full ham : ", runtime / num_executions)
+    assert np.all(hashes == hashes_before), "Hamming w/ np.bitwise_count was destructive"
     return
 
 # Stats from previous run

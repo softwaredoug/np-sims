@@ -55,7 +55,7 @@ static void unshared_bits(char **args, const npy_intp *dimensions,
         xord = (*(uint64_t *)in1) ^ (*(uint64_t *)in2);
         /* perform popcount */
 
-        *((uint8_t *)out1) = popcount(xord);
+        *((uint8_t *)out1) += popcount(xord);
         // *((double *)out2) = log(tmp / (1 - tmp));
         /* END main ufunc computation */
 
@@ -65,8 +65,46 @@ static void unshared_bits(char **args, const npy_intp *dimensions,
     }
 }
 
+
+static void hamming(char **args, const npy_intp *dimensions,
+                    const npy_intp *steps, void *data)
+{
+    npy_intp i, j;
+    npy_intp n = dimensions[0];
+    npy_intp n1 = dimensions[1];  /* appears to be size of first dimension */
+    npy_intp n2 = dimensions[2]; /* appears to be size of second dimension */
+    char *in1 = args[0], *in2 = args[1];
+    char *out1 = args[2];
+
+    uint64_t xord = 0;
+
+    /* is dimension now what  we're accumulating over? */
+    uint64_t sum = 0;
+    for (i = 0; i < n1; i++) {
+        /* BEGIN main ufunc computation */
+        sum = 0;
+        for (j = 0; j < n2; j++) {
+          xord = (*(uint64_t *)in1) ^ (*(uint64_t *)in2);
+          /* perform popcount */
+
+          sum += popcount(xord);
+          in1 += 1;
+          in2 += 1;
+          // *((double *)out2) = log(tmp / (1 - tmp));
+          /* END main ufunc computation */
+        }
+        if (sum > 255) {
+          sum = 255;
+        }
+        (*((uint8_t *)out1)) = sum;
+
+        out1 += 1;
+    }
+}
+
 /*This a pointer to the above function*/
 PyUFuncGenericFunction funcs[1] = {&unshared_bits};
+PyUFuncGenericFunction hamming_funcs[1] = {&hamming};
 
 /* These are the input and return dtypes of logit.*/
 
@@ -87,7 +125,7 @@ static struct PyModuleDef moduledef = {
 
 PyMODINIT_FUNC PyInit_npufunc(void)
 {
-    PyObject *m, *num_unshared, *d;
+    PyObject *m, *num_unshared, *hamming_ufunc, *d;
 
     import_array();
     import_umath();
@@ -101,10 +139,25 @@ PyMODINIT_FUNC PyInit_npufunc(void)
                                            PyUFunc_None, "num_unshared_bits",
                                            "num_unshared_bits_docstr", 0);
 
+    if (num_unshared == NULL) {
+        printf("num_unshared is NULL!!\n");
+    }
+
+    hamming_ufunc = PyUFunc_FromFuncAndDataAndSignature(hamming_funcs, NULL, types, 1, 2, 1,
+                                                  PyUFunc_None, "hamming",
+                                                  "hamming_docstr", 0,
+                                                  "(m,n),(n)->(m)");
+    if (hamming_ufunc == NULL) {
+        printf("hamming_ufunc is NULL!!\n");
+    }
     d = PyModule_GetDict(m);
 
     PyDict_SetItemString(d, "num_unshared_bits", num_unshared);
+    PyDict_SetItemString(d, "hamming", hamming_ufunc);
     Py_DECREF(num_unshared);
+    Py_DECREF(hamming_ufunc);
+
+    printf("Returning");
 
     return m;
 }
