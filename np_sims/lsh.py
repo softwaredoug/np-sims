@@ -67,6 +67,6 @@ def query(vector, hashes, projections, hamming_func=hamming_c, n=10):
     # Compute the hamming distance between the query and all hashes
     hammings = hamming_func(hashes, query_hash)
     # Sort ascending, 0 is most similar
-    idxs = np.argsort(hammings)[0][:n]
-    # lsh_sims = hammings[0][idxs]
-    return idxs
+    idxs = np.argsort(hammings)[:n]
+    lsh_sims = hammings[idxs]
+    return idxs, lsh_sims

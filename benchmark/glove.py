@@ -11,10 +11,10 @@ sys.path.append(cwd)
 
 from np_sims.lsh import index, query, create_projections  # noqa: E402
 from np_sims import hamming_c  # noqa: E402, F401
-from np_sims.hamming import hamming_naive  # noqa: E402
+from np_sims.hamming import hamming_naive  # noqa: E402, F401
 
 
-def glove(num_to_sample=10000000):
+def glove(num_to_sample=100000000):
     terms = []
     vectors = []
 
@@ -22,8 +22,8 @@ def glove(num_to_sample=10000000):
     vectors_file = "glove.840B.300d_vectors"
 
     try:
-        terms = read_lines(terms_file)
-        vectors = read_np(vectors_file)
+        terms = read_lines(terms_file)[:num_to_sample]
+        vectors = read_np(vectors_file)[:num_to_sample]
         return terms, vectors
     except FileNotFoundError:
         for line in lines_of("glove.840B.300d"):
@@ -72,7 +72,7 @@ def benchmark(terms, vectors, projs, hashes):
     execution_times = 0
     for query_idx in query_idxs:
         start = perf_counter()
-        result, sims = query(vectors[query_idx], hashes, projs, hamming_func=hamming_naive)
+        result, sims = query(vectors[query_idx], hashes, projs, hamming_func=hamming_c)
         results.append(list(zip(result, sims)))
         execution_times += perf_counter() - start
 
@@ -104,11 +104,14 @@ def benchmark(terms, vectors, projs, hashes):
 
     print("----------------------")
 
+    time_per_query = execution_times / len(query_idxs)
+    qps = len(query_idxs) / execution_times
     print(f"Mean recall: {avg_recall}")
-    print(f"Exec time: {execution_times / len(query_idxs)}")
+    print(f"  Exec time: {time_per_query}")
+    print(f"        QPS: {qps}")
 
 
-def load_or_build_index(vectors, num_projections=2560):
+def load_or_build_index(vectors, num_projections=64):
     dims = vectors.shape[1]
     suffix = f"{len(vectors)}_{num_projections}_{dims}"
     hashes_file = f"hashes_{suffix}"
@@ -130,8 +133,9 @@ def load_or_build_index(vectors, num_projections=2560):
 
 if __name__ == "__main__":
     terms, vectors = glove()
+    num_projections = int(sys.argv[1]) if len(sys.argv) > 1 else 64
 
-    hashes, projs = load_or_build_index(vectors)
+    hashes, projs = load_or_build_index(vectors, num_projections)
     print("Done indexing")
 
     benchmark(terms, vectors, projs, hashes)
