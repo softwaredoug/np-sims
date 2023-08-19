@@ -3,7 +3,15 @@ import numpy as np
 from data_dir import read_np, write_np, read_lines, write_lines, lines_of
 from time import perf_counter
 
-from np_sims.lsh import index, query, create_projections
+# Get current working dir
+import os
+import sys
+cwd = os.getcwd()
+sys.path.append(cwd)
+
+from np_sims.lsh import index, query, create_projections  # noqa: E402
+from np_sims import hamming_c  # noqa: E402, F401
+from np_sims.hamming import hamming_naive  # noqa: E402
 
 
 def glove(num_to_sample=10000000):
@@ -64,7 +72,7 @@ def benchmark(terms, vectors, projs, hashes):
     execution_times = 0
     for query_idx in query_idxs:
         start = perf_counter()
-        result, sims = query(vectors[query_idx], hashes, projs)
+        result, sims = query(vectors[query_idx], hashes, projs, hamming_func=hamming_naive)
         results.append(list(zip(result, sims)))
         execution_times += perf_counter() - start
 

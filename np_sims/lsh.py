@@ -61,12 +61,12 @@ def index(vectors, projections):
     return hashes
 
 
-def query(vector, hashes, projections, hamming_func=hamming_c):
+def query(vector, hashes, projections, hamming_func=hamming_c, n=10):
     # Compute the hashes for the vector (is this now a bottleneck?)
     query_hash = index([vector], projections)
     # Compute the hamming distance between the query and all hashes
     hammings = hamming_func(hashes, query_hash)
     # Sort ascending, 0 is most similar
-    idxs = np.argsort(hammings)[0][0:10]
-    lsh_sims = hammings[0][idxs]
-    return idxs, lsh_sims
+    idxs = np.argsort(hammings)[0][:n]
+    # lsh_sims = hammings[0][idxs]
+    return idxs
