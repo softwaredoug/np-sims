@@ -18,3 +18,5 @@ six==1.16.0
 stack-data==0.6.2
 traitlets==5.9.0
 wcwidth==0.2.6
+
+pytest==7.4.0
