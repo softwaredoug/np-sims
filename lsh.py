@@ -70,5 +70,3 @@ def query(vector, hashes, projections):
     idxs = np.argsort(hammings)[0][0:10]
     lsh_sims = hammings[0][idxs]
     return idxs, lsh_sims
-
-
