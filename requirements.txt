@@ -6,7 +6,6 @@ executing==1.2.0
 ipython==8.14.0
 jedi==0.19.0
 matplotlib-inline==0.1.6
-npufunc==0.0.0
 numpy==1.25.2
 parso==0.8.3
 pexpect==4.8.0

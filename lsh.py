@@ -1,5 +1,6 @@
 import numpy as np
-from similarities import hamming
+from similarities import hamming as hamming_c
+from data_dir import read_np, write_np, read_lines, write_lines, lines_of
 from time import perf_counter
 
 
@@ -66,7 +67,7 @@ def query(vector, hashes, projections):
     # Compute the hashes for the vector
     query_hash = index([vector], projections)
     # Compute the hamming distance between the query and all hashes
-    hammings = hamming(hashes, query_hash)
+    hammings = hamming_c(hashes, query_hash)
     # Sort ascending, 0 is most similar
     idxs = np.argsort(hammings)[0][0:10]
     lsh_sims = hammings[0][idxs]
@@ -77,39 +78,35 @@ def glove(num_to_sample=10000000):
     terms = []
     vectors = []
 
-    terms_file = "glove.840B.300d_terms.txt"
-    vectors_file = "glove.840B.300d_terms.npz"
+    terms_file = "glove.840B.300d_terms"
+    vectors_file = "glove.840B.300d_vectors"
 
     try:
-        with open(terms_file, "r") as f:
-            terms = [line.strip() for line in f]
-        vectors = np.load(vectors_file)["arr_0"]
+        terms = read_lines(terms_file)
+        vectors = read_np(vectors_file)
         return terms, vectors
     except FileNotFoundError:
-        with open("glove.840B.300d.txt", "r") as f:
-            for line in f:
-                term, *vector = line.split()
-                try:
-                    vect = np.array([np.float32(val) for val in vector])
-                    vect /= np.linalg.norm(vect)
-                    if len(vect) != 300:
-                        raise ValueError(f"Vector not 300 dims: {len(vect)}")
-                    vectors.append(vect)
-                    terms.append(term)
+        for line in lines_of("glove.840B.300d"):
+            term, *vector = line.split()
+            try:
+                vect = np.array([np.float32(val) for val in vector])
+                vect /= np.linalg.norm(vect)
+                if len(vect) != 300:
+                    raise ValueError(f"Vector not 300 dims: {len(vect)}")
+                vectors.append(vect)
+                terms.append(term)
 
-                    if len(terms) == num_to_sample:
-                        break
-                except ValueError as e:
-                    print(e)
-                    print("Skipping line ", line)
-                    pass
-            # Dump to file
-            np.savez_compressed(vectors_file, vectors)
-            with open(terms_file, "w") as f:
-                for term in terms:
-                    f.write(term + "\n")
-        print(f"Loaded up to term: {terms[-1]} -- {len(terms)} terms")
-        return terms, np.array(vectors)
+                if len(terms) == num_to_sample:
+                    break
+            except ValueError as e:
+                print(e)
+                print("Skipping line ", line)
+                pass
+        # Dump to file
+        write_np(vectors_file, vectors)
+        write_lines(terms_file, terms)
+    print(f"Loaded up to term: {terms[-1]} -- {len(terms)} terms")
+    return terms, np.array(vectors)
 
 
 def most_similar_cos(vectors, query_idx):
@@ -173,13 +170,13 @@ def benchmark(terms, vectors, projs, hashes):
 
 def load_or_build_index(vectors, num_projections=2560):
     dims = vectors.shape[1]
-    suffix = f"{len(vectors)}_{num_projections}_{dims}.npy"
+    suffix = f"{len(vectors)}_{num_projections}_{dims}"
     hashes_file = f"hashes_{suffix}"
     projs_file = f"projs_{suffix}"
 
     try:
-        hashes = np.load(hashes_file)
-        projs = np.load(projs_file)
+        hashes = read_np(hashes_file)
+        projs = read_np(projs_file)
         print(f"loaded from {hashes_file} and {projs_file}")
         return hashes, projs
     except FileNotFoundError:
