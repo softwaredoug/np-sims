@@ -1,5 +1,5 @@
 import numpy as np
-from similarities import hamming as hamming_c
+from np_sims import hamming_c
 
 
 def random_projection(dims):
@@ -61,11 +61,11 @@ def index(vectors, projections):
     return hashes
 
 
-def query(vector, hashes, projections):
-    # Compute the hashes for the vector
+def query(vector, hashes, projections, hamming_func=hamming_c):
+    # Compute the hashes for the vector (is this now a bottleneck?)
     query_hash = index([vector], projections)
     # Compute the hamming distance between the query and all hashes
-    hammings = hamming_c(hashes, query_hash)
+    hammings = hamming_func(hashes, query_hash)
     # Sort ascending, 0 is most similar
     idxs = np.argsort(hammings)[0][0:10]
     lsh_sims = hammings[0][idxs]
