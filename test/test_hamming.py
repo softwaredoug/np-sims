@@ -1,6 +1,7 @@
 import pytest
 import numpy as np
 from np_sims.hamming import bit_count64, hamming_naive
+from np_sims import hamming_c
 
 
 bit_tests = [
@@ -29,3 +30,9 @@ hamming_tests = [
 def test_hamming(hashes, query, expected):
     assert (hamming_naive(np.array(hashes, dtype=np.uint64),
                           np.array(query, dtype=np.uint64)) == expected).all()
+
+
+@pytest.mark.parametrize("hashes, query, expected", hamming_tests)
+def test_hamming_c(hashes, query, expected):
+    assert (hamming_c(np.array(hashes, dtype=np.uint64),
+                      np.array(query, dtype=np.uint64)) == expected).all()
