@@ -29,10 +29,10 @@ on numpy.distutils for more information.
 def configuration(parent_package='', top_path=None):
     from numpy.distutils.misc_util import Configuration
 
-    config = Configuration('similarities',
+    config = Configuration('np_sims',
                            parent_package,
                            top_path)
-    config.add_extension('npufunc', ['ufunc.c'])
+    config.add_extension('ufuncs', ['ufunc.c'])
 
     return config
 

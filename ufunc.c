@@ -115,7 +115,7 @@ static char hamming_types[3] = {NPY_UINT64, NPY_UINT64,
 
 static struct PyModuleDef moduledef = {
     PyModuleDef_HEAD_INIT,
-    "npufunc",
+    "ufuncs",
     NULL,
     -1,
     LogitMethods,
@@ -125,7 +125,7 @@ static struct PyModuleDef moduledef = {
     NULL
 };
 
-PyMODINIT_FUNC PyInit_npufunc(void)
+PyMODINIT_FUNC PyInit_ufuncs(void)
 {
     PyObject *m, *num_unshared, *hamming_ufunc, *d;
 
