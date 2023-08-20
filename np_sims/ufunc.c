@@ -166,6 +166,7 @@ static void hamming_top_n(char **args, const npy_intp *dimensions,
                           const npy_intp *steps, void *data)
 {
     /* npy_intp n = dimensions[0]; <<- not sure what this is */
+    npy_intp i, j;
     npy_intp num_hashes = dimensions[1];  /* appears to be size of first dimension */
     npy_intp hash_len = dimensions[2];  /* appears to be size of second dimension */
     uint64_t *in1 = __builtin_assume_aligned((uint64_t*)args[0], 16);
@@ -177,16 +178,15 @@ static void hamming_top_n(char **args, const npy_intp *dimensions,
     struct TopNQueue queue = create_queue((uint64_t*)args[2]);
 
     uint64_t sum = 0;
-    uint64_t hash_idx = 0;
-    for (; in1 < in1_end; ) {
-        sum += popcount((*in1++) ^ (*in2++));
-
-        if ((in1 - in1_start) >= hash_len) {
-          in1_start = in1;
-          maybe_insert_into_queue(&queue, sum, hash_idx++);
-          sum = 0;
-          in2 = in2_start;
+    for (i = 0; i < num_hashes; i++) {
+        sum = 0;
+        in2 = in2_start;
+        for (j = 0; j < hash_len; j++) {
+          sum += popcount((*in1++) ^ (*in2++));
         }
+
+        /* Only add ot output if its better than nth_so_far. We don't care about sorting*/
+        maybe_insert_into_queue(&queue, sum, i);
     }
 }
 
