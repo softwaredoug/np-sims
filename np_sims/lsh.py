@@ -73,7 +73,7 @@ def query_with_hamming_then_slow_argsort(vector, hashes, projections, hamming_fu
     return idxs, lsh_sims
 
 
-def query_with_hamming_top_n(vector, hashes, projections, hamming_func):
+def query_with_hamming_top_n(vector, hashes, projections, hamming_func=hamming_c, n=10):
     """Query using C-based hamming similarity w/ top N."""
     query_hash = index([vector], projections)[0]
     best = hamming_top_n(hashes, query_hash)
