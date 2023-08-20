@@ -175,18 +175,12 @@ static void hamming_top_n(char **args, const npy_intp *dimensions,
 
     struct TopNQueue queue = create_queue((uint64_t*)args[2]);
 
-    uint64_t xord = 0;
-
     uint64_t sum = 0;
     for (i = 0; i < num_hashes; i++) {
         sum = 0;
         in2 = in2_start;
         for (j = 0; j < hash_len; j++) {
-          xord = (*in1) ^ (*in2);
-          sum += popcount(xord);
-
-          in2++;
-          in1++;
+          sum += popcount((*in1++) ^ (*in2++));
         }
 
         /* Only add ot output if its better than nth_so_far. We don't care about sorting*/
