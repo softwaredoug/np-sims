@@ -69,6 +69,8 @@ def benchmark(terms, vectors, projs, hashes):
         result, sims = most_similar_cos(vectors, query_idx)
         results_gt.append(list(zip(result, sims)))
 
+    zero_sims = [0] * 10
+
     with cProfile.Profile() as pr:
         # Run LSH
         results = []
@@ -77,6 +79,8 @@ def benchmark(terms, vectors, projs, hashes):
             start = perf_counter()
             result, sims = query(vectors[query_idx], hashes, projs, hamming_func=hamming_naive)
             execution_times += perf_counter() - start
+            if sims is None:
+                sims = zero_sims
             results.append(list(zip(result, sims)))
 
         pr.dump_stats("lsh.prof")

@@ -1,5 +1,5 @@
 import numpy as np
-from np_sims import hamming_c
+from np_sims import hamming_c, hamming_top_n
 
 
 def random_projection(dims):
@@ -61,7 +61,7 @@ def index(vectors, projections):
     return hashes
 
 
-def query(vector, hashes, projections, hamming_func=hamming_c, n=10):
+def query_with_sort(vector, hashes, projections, hamming_func=hamming_c, n=10):
     # Compute the hashes for the vector (is this now a bottleneck?)
     query_hash = index([vector], projections)[0]
     # Compute the hamming distance between the query and all hashes
@@ -70,3 +70,12 @@ def query(vector, hashes, projections, hamming_func=hamming_c, n=10):
     idxs = np.argsort(hammings)[:n]
     lsh_sims = hammings[idxs]
     return idxs, lsh_sims
+
+
+def query_with_hamming_top_n(vector, hashes, projections, hamming_func):
+    query_hash = index([vector], projections)[0]
+    best = hamming_top_n(hashes, query_hash)
+    return best, None
+
+
+query = query_with_hamming_top_n
