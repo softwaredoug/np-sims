@@ -2,6 +2,8 @@ import numpy as np
 
 from data_dir import read_np, write_np, read_lines, write_lines, lines_of
 from time import perf_counter
+import cProfile
+import pstats
 
 # Get current working dir
 import os
@@ -14,7 +16,7 @@ from np_sims import hamming_c  # noqa: E402, F401
 from np_sims.hamming import hamming_naive  # noqa: E402, F401
 
 
-def glove(num_to_sample=100000000):
+def glove(num_to_sample=10000000):
     terms = []
     vectors = []
 
@@ -67,14 +69,17 @@ def benchmark(terms, vectors, projs, hashes):
         result, sims = most_similar_cos(vectors, query_idx)
         results_gt.append(list(zip(result, sims)))
 
-    # Run LSH
-    results = []
-    execution_times = 0
-    for query_idx in query_idxs:
-        start = perf_counter()
-        result, sims = query(vectors[query_idx], hashes, projs, hamming_func=hamming_c)
-        results.append(list(zip(result, sims)))
-        execution_times += perf_counter() - start
+    with cProfile.Profile() as pr:
+        # Run LSH
+        results = []
+        execution_times = 0
+        for query_idx in query_idxs:
+            start = perf_counter()
+            result, sims = query(vectors[query_idx], hashes, projs, hamming_func=hamming_naive)
+            execution_times += perf_counter() - start
+            results.append(list(zip(result, sims)))
+
+        pr.dump_stats("lsh.prof")
 
     # Report results
     recall = 0
@@ -106,6 +111,7 @@ def benchmark(terms, vectors, projs, hashes):
 
     time_per_query = execution_times / len(query_idxs)
     qps = len(query_idxs) / execution_times
+    pstats.Stats("lsh.prof").strip_dirs().sort_stats("cumulative").print_stats(20)
     print(f"Mean recall: {avg_recall}")
     print(f"  Exec time: {time_per_query}")
     print(f"        QPS: {qps}")
@@ -125,8 +131,8 @@ def load_or_build_index(vectors, num_projections=64):
     except FileNotFoundError:
         projs = create_projections(num_projections, dims)
         hashes = index(vectors, projs)
-        np.save(hashes_file, hashes)
-        np.save(projs_file, projs)
+        write_np(hashes_file, hashes)
+        write_np(projs_file, projs)
         print(f"saved {hashes_file} and {projs_file}")
         return hashes, projs
 

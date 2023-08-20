@@ -63,7 +63,7 @@ def index(vectors, projections):
 
 def query(vector, hashes, projections, hamming_func=hamming_c, n=10):
     # Compute the hashes for the vector (is this now a bottleneck?)
-    query_hash = index([vector], projections)
+    query_hash = index([vector], projections)[0]
     # Compute the hamming distance between the query and all hashes
     hammings = hamming_func(hashes, query_hash)
     # Sort ascending, 0 is most similar

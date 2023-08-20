@@ -65,13 +65,17 @@ static void unshared_bits(char **args, const npy_intp *dimensions,
     }
 }
 
+#ifndef UINT64_MAX
+#define UINT64_MAX 0xffffffffffffffff
+#endif
+
 
 static void hamming(char **args, const npy_intp *dimensions,
                     const npy_intp *steps, void *data)
 {
     npy_intp i, j;
     npy_intp n = dimensions[0];
-    npy_intp n1 = dimensions[1];  /* appears to be size of first dimension */
+    npy_intp num_hashes = dimensions[1];  /* appears to be size of first dimension */
     npy_intp n2 = dimensions[2];  /* appears to be size of second dimension */
     char *in1 = args[0], *in2 = args[1], *in1_start = args[0], *in2_start = args[1];
     char *out1 = args[2];
@@ -80,12 +84,10 @@ static void hamming(char **args, const npy_intp *dimensions,
 
     /* is dimension now what  we're accumulating over? */
     uint64_t sum = 0;
-    for (i = 0; i < n1; i++) {
+    for (i = 0; i < num_hashes; i++) {
         sum = 0;
         in2 = in2_start;
         for (j = 0; j < n2; j++) {
-          /* uint64_t value1 = (*(uint64_t *)in1);
-          uint64_t value2 = (*(uint64_t *)in2); */
           xord = (*(uint64_t *)in1) ^ (*(uint64_t *)in2);
           /* perform popcount */
 
@@ -101,9 +103,99 @@ static void hamming(char **args, const npy_intp *dimensions,
     }
 }
 
+const uint64_t N = 10;
+
+
+struct TopNQueue {
+    uint64_t out_queue_end;
+    uint64_t top_n_sim_scores[10];
+    uint64_t worst_in_queue;
+    uint64_t worst_in_queue_index;
+
+    uint64_t* best_rows
+};
+
+const struct TopNQueue defaults = {
+    .out_queue_end = 0,
+    .top_n_sim_scores = {UINT64_MAX, UINT64_MAX, UINT64_MAX, UINT64_MAX, UINT64_MAX,
+                         UINT64_MAX, UINT64_MAX, UINT64_MAX, UINT64_MAX, UINT64_MAX},
+    .best_rows = NULL,
+    .worst_in_queue = UINT64_MAX,
+    .worst_in_queue_index = 0
+};
+
+
+struct TopNQueue create_queue(uint64_t* best_rows) {
+    struct TopNQueue queue = defaults;
+    queue.best_rows = best_rows;
+    /* Initialize to UINT64_MAX*/
+    for (int i = 0; i < N; i++) {
+        best_rows[i] = UINT64_MAX;
+    }
+    return queue;
+}
+
+void maybe_insert_into_queue(struct TopNQueue* queue, uint64_t sim_score, uint64_t row_index) {
+   if (sim_score < queue->worst_in_queue) {
+     if (queue->out_queue_end < N) {
+       queue->best_rows[queue->out_queue_end] = row_index;
+       queue->top_n_sim_scores[queue->out_queue_end] = sim_score;
+       queue->out_queue_end++;
+     }
+     else {
+       queue->best_rows[queue->worst_in_queue_index] = row_index;
+       queue->top_n_sim_scores[queue->worst_in_queue_index] = sim_score;
+     }
+     /* find new worst_in_queue */
+     queue->worst_in_queue = 0;
+     for (int output_idx = 0; output_idx < 10; output_idx++) {
+       if (queue->top_n_sim_scores[output_idx] > queue->worst_in_queue) {
+         queue->worst_in_queue = queue->top_n_sim_scores[output_idx];
+         queue->worst_in_queue_index = output_idx;
+       }
+     }
+   }
+}
+
+static void hamming_top_n(char **args, const npy_intp *dimensions,
+                          const npy_intp *steps, void *data)
+{
+    npy_intp i, j;
+    /* npy_intp n = dimensions[0]; <<- not sure what this is */
+    npy_intp num_hashes = dimensions[1];  /* appears to be size of first dimension */
+    npy_intp n2 = dimensions[2];  /* appears to be size of second dimension */
+    char *in1 = args[0], *in2 = args[1], *in2_start = args[1];
+
+
+    struct TopNQueue queue = create_queue((uint64_t*)args[2]);
+
+    uint64_t xord = 0;
+
+    /* is dimension now what  we're accumulating over? */
+    uint64_t sum = 0;
+    for (i = 0; i < num_hashes; i++) {
+        sum = 0;
+        in2 = in2_start;
+        for (j = 0; j < n2; j++) {
+          /* uint64_t value1 = (*(uint64_t *)in1);
+          uint64_t value2 = (*(uint64_t *)in2); */
+          xord = (*(uint64_t *)in1) ^ (*(uint64_t *)in2);
+          /* perform popcount */
+
+          sum += popcount(xord);
+          in2 += sizeof(uint64_t);
+          in1 += sizeof(uint64_t);
+        }
+
+        /* Only add ot output if its better than nth_so_far. We don't care about sorting*/
+        maybe_insert_into_queue(&queue, sum, i);
+    }
+}
+
 /*This a pointer to the above function*/
 PyUFuncGenericFunction funcs[1] = {&unshared_bits};
 PyUFuncGenericFunction hamming_funcs[1] = {&hamming};
+PyUFuncGenericFunction hamming_n_funcs[1] = {&hamming_top_n};
 
 /* These are the input and return dtypes of logit.*/
 
@@ -127,7 +219,7 @@ static struct PyModuleDef moduledef = {
 
 PyMODINIT_FUNC PyInit_ufuncs(void)
 {
-    PyObject *m, *num_unshared, *hamming_ufunc, *d;
+    PyObject *m, *num_unshared, *hamming_ufunc, *hamming_n_ufunc, *d;
 
     import_array();
     import_umath();
@@ -152,10 +244,19 @@ PyMODINIT_FUNC PyInit_ufuncs(void)
     if (hamming_ufunc == NULL) {
         printf("hamming_ufunc is NULL!!\n");
     }
+
+    hamming_n_ufunc = PyUFunc_FromFuncAndDataAndSignature(hamming_n_funcs, NULL, hamming_types, 1, 2, 1,
+                                                          PyUFunc_None, "hamming_top_n",
+                                                          "Gets the top 10 hashes by hamming similarity", 0,
+                                                          "(m,n),(n)->(10)");
+    if (hamming_n_ufunc == NULL) {
+        printf("hamming_n_ufunc is NULL!!\n");
+    }
     d = PyModule_GetDict(m);
 
     PyDict_SetItemString(d, "num_unshared_bits", num_unshared);
     PyDict_SetItemString(d, "hamming", hamming_ufunc);
+    PyDict_SetItemString(d, "hamming_top_n", hamming_n_ufunc);
     Py_DECREF(num_unshared);
     Py_DECREF(hamming_ufunc);
 
