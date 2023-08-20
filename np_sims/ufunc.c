@@ -28,7 +28,7 @@ static PyMethodDef LogitMethods[] = {
     {NULL, NULL, 0, NULL}
 };
 
-static uint8_t popcount(uint64_t val) {
+inline uint8_t popcount(uint64_t val) {
 #if (defined(__clang__) || defined(__GNUC__))
     return __builtin_popcountll(val);
 #elif defined(_MSC_VER)
@@ -74,7 +74,6 @@ static void hamming(char **args, const npy_intp *dimensions,
                     const npy_intp *steps, void *data)
 {
     npy_intp i, j;
-    npy_intp n = dimensions[0];
     npy_intp num_hashes = dimensions[1];  /* appears to be size of first dimension */
     npy_intp n2 = dimensions[2];  /* appears to be size of second dimension */
     char *in1 = args[0], *in2 = args[1], *in1_start = args[0], *in2_start = args[1];
@@ -112,7 +111,7 @@ struct TopNQueue {
     uint64_t worst_in_queue;
     uint64_t worst_in_queue_index;
 
-    uint64_t* best_rows
+    uint64_t* best_rows;
 };
 
 const struct TopNQueue defaults = {
@@ -129,13 +128,13 @@ struct TopNQueue create_queue(uint64_t* best_rows) {
     struct TopNQueue queue = defaults;
     queue.best_rows = best_rows;
     /* Initialize to UINT64_MAX*/
-    for (int i = 0; i < N; i++) {
+    for (uint64_t i = 0; i < N; i++) {
         best_rows[i] = UINT64_MAX;
     }
     return queue;
 }
 
-void maybe_insert_into_queue(struct TopNQueue* queue, uint64_t sim_score, uint64_t row_index) {
+inline void maybe_insert_into_queue(struct TopNQueue* queue, uint64_t sim_score, uint64_t row_index) {
    if (sim_score < queue->worst_in_queue) {
      if (queue->out_queue_end < N) {
        queue->best_rows[queue->out_queue_end] = row_index;
@@ -157,6 +156,12 @@ void maybe_insert_into_queue(struct TopNQueue* queue, uint64_t sim_score, uint64
    }
 }
 
+/*#define EARLY_EXIT*/
+
+#ifndef __builtin_assume_aligned
+#define __builtin_assume_aligned(x, y) (x)
+#endif
+
 static void hamming_top_n(char **args, const npy_intp *dimensions,
                           const npy_intp *steps, void *data)
 {
@@ -164,37 +169,24 @@ static void hamming_top_n(char **args, const npy_intp *dimensions,
     /* npy_intp n = dimensions[0]; <<- not sure what this is */
     npy_intp num_hashes = dimensions[1];  /* appears to be size of first dimension */
     npy_intp hash_len = dimensions[2];  /* appears to be size of second dimension */
-    char *in1 = args[0], *in2 = args[1], *in2_start = args[1], in1_next = args[0];
-
+    uint64_t *in1 = __builtin_assume_aligned((uint64_t*)args[0], 16);
+    uint64_t *in2 =  __builtin_assume_aligned((uint64_t*)args[1], 16);
+    uint64_t *in2_start = __builtin_assume_aligned((uint64_t*)args[1], 16);
 
     struct TopNQueue queue = create_queue((uint64_t*)args[2]);
 
     uint64_t xord = 0;
 
-    /* is dimension now what  we're accumulating over? */
     uint64_t sum = 0;
     for (i = 0; i < num_hashes; i++) {
         sum = 0;
         in2 = in2_start;
         for (j = 0; j < hash_len; j++) {
-          xord = (*(uint64_t *)in1) ^ (*(uint64_t *)in2);
-          /* perform popcount */
-
+          xord = (*in1) ^ (*in2);
           sum += popcount(xord);
 
-          /* OPTIMIZATION */
-          /* break if we've already exceeded the worst in the queue */
-          if (sum >= queue.worst_in_queue) {
-            /* Fast forward in1 to the next row
-            printf(">> (%ld) Maybe fast forwarding j: %lu hash_len: %lu diff: %lu\n", i, j, hash_len, (hash_len - j));
-            printf(">>> Worst in queue: %lu\n", queue.worst_in_queue);
-            printf(">>>            sum: %lu\n", sum); */
-            in1 += (hash_len - j) * sizeof(uint64_t);
-            break;
-          }
-
-          in2 += sizeof(uint64_t);
-          in1 += sizeof(uint64_t);
+          in2++;
+          in1++;
         }
 
         /* Only add ot output if its better than nth_so_far. We don't care about sorting*/
