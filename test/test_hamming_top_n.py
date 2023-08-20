@@ -21,11 +21,32 @@ def as_top_n(arr: List[int], n: int = 10) -> List[np.uint64]:
 
 hamming_tests = [
     ([[0b0010], [0b1101]], [0b0010], as_top_n([0, 1])),
+
     ([[UINT64_MAX], [UINT64_MAX], [UINT64_MAX],  # should NOT be included
       [0b0010], [0b1101], [0b1101], [0b1111], [0b0010], [0b1101], [0b1101], [0b1111], [0b0011], [0b0110]],
      [0b0010],  # query
      as_top_n([3, 4, 5, 6, 7, 8, 9, 10, 11, 12])),  # all but the first 3
+
     ([[0], [UINT64_MAX]], [0], as_top_n([0, 1])),
+
+    # Should detect the first 10
+    ([[0b0010], [0b1101], [0b1101], [0b1111], [0b0010], [0b1101], [0b1101], [0b1111], [0b0011], [0b0110]]
+     + ([[UINT64_MAX]] * 10),
+     [0b0010],  # query
+     as_top_n([0, 1, 2, 3, 4, 5, 6, 7, 8, 9])),  # all but the first 3
+
+    # Should detect the first 10
+    ([[0b0010], [0b1101], [0b1101], [0b1111], [0b0010], [0b1101], [0b1101], [0b1111], [0b0011], [0b0110]]
+     + ([[UINT64_MAX]] * 1000),
+     [0b0010],  # query
+     as_top_n([0, 1, 2, 3, 4, 5, 6, 7, 8, 9])),  # all but the first 3
+
+    # Test with multiple hashes per row
+    # Should detect the first 10
+    ([[0b1111, 0b0010], [0b1101, 0b1101], [0b1011, 0b1101], [0b1010, 0b1111], [0b1101, 0b0010], [0b1001, 0b1101], [0b0001, 0b1101], [0b0000, 0b1111], [0b0010, 0b0011], [0b1101, 0b0110]]
+     + ([[UINT64_MAX, UINT64_MAX]] * 1000),
+     [0b1111, 0b0010],  # query
+     as_top_n([0, 1, 2, 3, 4, 5, 6, 7, 8, 9])),  # all but the first 3
 ]
 
 

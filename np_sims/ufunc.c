@@ -163,8 +163,8 @@ static void hamming_top_n(char **args, const npy_intp *dimensions,
     npy_intp i, j;
     /* npy_intp n = dimensions[0]; <<- not sure what this is */
     npy_intp num_hashes = dimensions[1];  /* appears to be size of first dimension */
-    npy_intp n2 = dimensions[2];  /* appears to be size of second dimension */
-    char *in1 = args[0], *in2 = args[1], *in2_start = args[1];
+    npy_intp hash_len = dimensions[2];  /* appears to be size of second dimension */
+    char *in1 = args[0], *in2 = args[1], *in2_start = args[1], in1_next = args[0];
 
 
     struct TopNQueue queue = create_queue((uint64_t*)args[2]);
@@ -176,13 +176,23 @@ static void hamming_top_n(char **args, const npy_intp *dimensions,
     for (i = 0; i < num_hashes; i++) {
         sum = 0;
         in2 = in2_start;
-        for (j = 0; j < n2; j++) {
-          /* uint64_t value1 = (*(uint64_t *)in1);
-          uint64_t value2 = (*(uint64_t *)in2); */
+        for (j = 0; j < hash_len; j++) {
           xord = (*(uint64_t *)in1) ^ (*(uint64_t *)in2);
           /* perform popcount */
 
           sum += popcount(xord);
+
+          /* OPTIMIZATION */
+          /* break if we've already exceeded the worst in the queue */
+          if (sum >= queue.worst_in_queue) {
+            /* Fast forward in1 to the next row
+            printf(">> (%ld) Maybe fast forwarding j: %lu hash_len: %lu diff: %lu\n", i, j, hash_len, (hash_len - j));
+            printf(">>> Worst in queue: %lu\n", queue.worst_in_queue);
+            printf(">>>            sum: %lu\n", sum); */
+            in1 += (hash_len - j) * sizeof(uint64_t);
+            break;
+          }
+
           in2 += sizeof(uint64_t);
           in1 += sizeof(uint64_t);
         }
