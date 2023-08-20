@@ -1,6 +1,9 @@
 # Local data directory
 data/
 
+# Python profiles
+*.prof
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
