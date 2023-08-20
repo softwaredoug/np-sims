@@ -11,7 +11,7 @@ import sys
 cwd = os.getcwd()
 sys.path.append(cwd)
 
-from np_sims.lsh import index, query, create_projections  # noqa: E402
+from np_sims.lsh import index, query_with_hamming_top_n, query_with_hamming_then_slow_argsort, create_projections  # noqa: E402
 from np_sims import hamming_c  # noqa: E402, F401
 from np_sims.hamming import hamming_naive  # noqa: E402, F401
 
@@ -71,19 +71,25 @@ def benchmark(terms, vectors, projs, hashes):
 
     zero_sims = [0] * 10
 
+    compare = False
     with cProfile.Profile() as pr:
         # Run LSH
         results = []
         execution_times = 0
         for query_idx in query_idxs:
             start = perf_counter()
-            result, sims = query(vectors[query_idx], hashes, projs, hamming_func=hamming_naive)
+            result, sims = query_with_hamming_top_n(vectors[query_idx], hashes, projs, hamming_func=hamming_naive)
             execution_times += perf_counter() - start
             if sims is None:
                 sims = zero_sims
+            if compare:
+                result_slow, slow_sims = query_with_hamming_then_slow_argsort(vectors[query_idx], hashes, projs, hamming_func=hamming_naive)
+                # result_slow = sorted(result_slow)
+                # if sorted(result) != result_slow:
+                #     print("Mismatch")
             results.append(list(zip(result, sims)))
 
-        pr.dump_stats("lsh.prof")
+        pr.dump_stats("top_n.prof")
 
     # Report results
     recall = 0
@@ -115,13 +121,13 @@ def benchmark(terms, vectors, projs, hashes):
 
     time_per_query = execution_times / len(query_idxs)
     qps = len(query_idxs) / execution_times
-    pstats.Stats("lsh.prof").strip_dirs().sort_stats("cumulative").print_stats(20)
+    pstats.Stats("top_n.prof").strip_dirs().sort_stats("cumulative").print_stats(20)
     print(f"Mean recall: {avg_recall}")
     print(f"  Exec time: {time_per_query}")
     print(f"        QPS: {qps}")
 
 
-def load_or_build_index(vectors, num_projections=64):
+def load_or_build_index(vectors, num_projections=640):
     dims = vectors.shape[1]
     suffix = f"{len(vectors)}_{num_projections}_{dims}"
     hashes_file = f"hashes_{suffix}"

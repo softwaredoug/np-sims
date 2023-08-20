@@ -61,21 +61,23 @@ def index(vectors, projections):
     return hashes
 
 
-def query_with_sort(vector, hashes, projections, hamming_func=hamming_c, n=10):
-    # Compute the hashes for the vector (is this now a bottleneck?)
+def query_with_hamming_then_slow_argsort(vector, hashes, projections, hamming_func=hamming_c, n=10):
+    """Query using C-based hamming similarity."""
+    # Compute the hashes for the vector
     query_hash = index([vector], projections)[0]
     # Compute the hamming distance between the query and all hashes
     hammings = hamming_func(hashes, query_hash)
-    # Sort ascending, 0 is most similar
+    # Sort ascending, 0 is most similar <-- actual bottleneck
     idxs = np.argsort(hammings)[:n]
     lsh_sims = hammings[idxs]
     return idxs, lsh_sims
 
 
 def query_with_hamming_top_n(vector, hashes, projections, hamming_func):
+    """Query using C-based hamming similarity w/ top N."""
     query_hash = index([vector], projections)[0]
     best = hamming_top_n(hashes, query_hash)
     return best, None
 
 
-query = query_with_hamming_top_n
+query = query_with_hamming_top_n  # Default query to fastest
