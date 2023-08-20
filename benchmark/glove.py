@@ -78,7 +78,7 @@ def benchmark(terms, vectors, projs, hashes):
         execution_times = 0
         for query_idx in query_idxs:
             start = perf_counter()
-            result, sims = query_with_hamming_top_n(vectors[query_idx], hashes, projs, hamming_func=hamming_naive)
+            result, sims = query_with_hamming_top_n(vectors[query_idx], hashes, projs)
             execution_times += perf_counter() - start
             if sims is None:
                 sims = zero_sims
