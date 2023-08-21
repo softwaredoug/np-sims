@@ -162,31 +162,196 @@ inline void maybe_insert_into_queue(struct TopNQueue* queue, uint64_t sim_score,
 #define __builtin_assume_aligned(x, y) (x)
 #endif
 
+/* loop unrolled versions of hamming sim computation */
+
+#define HAMMING_TOP_N_HASH(N, BODY) \
+void hamming_top_n_hash_##N(uint64_t* hashes, uint64_t* query, \
+                          uint64_t num_hashes, uint64_t* best_rows) { \
+    struct TopNQueue queue = create_queue(best_rows); \
+    uint64_t sum = 0; \
+    for (uint64_t i = 0; i < num_hashes; i++) { \
+      BODY; \
+      maybe_insert_into_queue(&queue, sum, i); \
+    } \
+}
+
+HAMMING_TOP_N_HASH(1,
+    sum = popcount((*hashes++) ^ (*query));
+)
+
+HAMMING_TOP_N_HASH(2,
+    sum = popcount((*hashes++) ^ (*query));
+    sum += popcount((*hashes++) ^ (*query + 1));
+)
+
+HAMMING_TOP_N_HASH(3,
+    sum = popcount((*hashes++) ^ (*query));
+    sum += popcount((*hashes++) ^ (*query + 1));
+    sum += popcount((*hashes++) ^ (*query + 2));
+)
+
+HAMMING_TOP_N_HASH(4,
+    sum = popcount((*hashes++) ^ (*query));
+    sum += popcount((*hashes++) ^ (*query + 1));
+    sum += popcount((*hashes++) ^ (*query + 2));
+    sum += popcount((*hashes++) ^ (*query + 3));
+)
+
+HAMMING_TOP_N_HASH(5,
+    sum = popcount((*hashes++) ^ (*query));
+    sum += popcount((*hashes++) ^ (*query + 1));
+    sum += popcount((*hashes++) ^ (*query + 2));
+    sum += popcount((*hashes++) ^ (*query + 3));
+    sum += popcount((*hashes++) ^ (*query + 4));
+)
+
+HAMMING_TOP_N_HASH(6,
+    sum = popcount((*hashes++) ^ (*query));
+    sum += popcount((*hashes++) ^ (*query + 1));
+    sum += popcount((*hashes++) ^ (*query + 2));
+    sum += popcount((*hashes++) ^ (*query + 3));
+    sum += popcount((*hashes++) ^ (*query + 4));
+    sum += popcount((*hashes++) ^ (*query + 5));
+)
+
+HAMMING_TOP_N_HASH(7,
+    sum = popcount((*hashes++) ^ (*query));
+    sum += popcount((*hashes++) ^ (*query + 1));
+    sum += popcount((*hashes++) ^ (*query + 2));
+    sum += popcount((*hashes++) ^ (*query + 3));
+    sum += popcount((*hashes++) ^ (*query + 4));
+    sum += popcount((*hashes++) ^ (*query + 5));
+    sum += popcount((*hashes++) ^ (*query + 6));
+)
+
+HAMMING_TOP_N_HASH(8,
+    sum = popcount((*hashes++) ^ (*query));
+    sum += popcount((*hashes++) ^ (*query + 1));
+    sum += popcount((*hashes++) ^ (*query + 2));
+    sum += popcount((*hashes++) ^ (*query + 3));
+    sum += popcount((*hashes++) ^ (*query + 4));
+    sum += popcount((*hashes++) ^ (*query + 5));
+    sum += popcount((*hashes++) ^ (*query + 6));
+    sum += popcount((*hashes++) ^ (*query + 7));
+)
+
+HAMMING_TOP_N_HASH(9,
+    sum = popcount((*hashes++) ^ (*query));
+    sum += popcount((*hashes++) ^ (*query + 1));
+    sum += popcount((*hashes++) ^ (*query + 2));
+    sum += popcount((*hashes++) ^ (*query + 3));
+    sum += popcount((*hashes++) ^ (*query + 4));
+    sum += popcount((*hashes++) ^ (*query + 5));
+    sum += popcount((*hashes++) ^ (*query + 6));
+    sum += popcount((*hashes++) ^ (*query + 7));
+    sum += popcount((*hashes++) ^ (*query + 8));
+)
+
+HAMMING_TOP_N_HASH(10,
+    sum = popcount((*hashes++) ^ (*query));
+    sum += popcount((*hashes++) ^ (*query + 1));
+    sum += popcount((*hashes++) ^ (*query + 2));
+    sum += popcount((*hashes++) ^ (*query + 3));
+    sum += popcount((*hashes++) ^ (*query + 4));
+    sum += popcount((*hashes++) ^ (*query + 5));
+    sum += popcount((*hashes++) ^ (*query + 6));
+    sum += popcount((*hashes++) ^ (*query + 7));
+    sum += popcount((*hashes++) ^ (*query + 8));
+    sum += popcount((*hashes++) ^ (*query + 9));
+)
+
+/* An absurd case, just for testing */
+HAMMING_TOP_N_HASH(20,
+    sum = popcount((*hashes++) ^ (*query));
+    sum += popcount((*hashes++) ^ (*query + 1));
+    sum += popcount((*hashes++) ^ (*query + 2));
+    sum += popcount((*hashes++) ^ (*query + 3));
+    sum += popcount((*hashes++) ^ (*query + 4));
+    sum += popcount((*hashes++) ^ (*query + 5));
+    sum += popcount((*hashes++) ^ (*query + 6));
+    sum += popcount((*hashes++) ^ (*query + 7));
+    sum += popcount((*hashes++) ^ (*query + 8));
+    sum += popcount((*hashes++) ^ (*query + 9));
+    sum += popcount((*hashes++) ^ (*query + 10));
+    sum += popcount((*hashes++) ^ (*query + 11));
+    sum += popcount((*hashes++) ^ (*query + 12));
+    sum += popcount((*hashes++) ^ (*query + 13));
+    sum += popcount((*hashes++) ^ (*query + 14));
+    sum += popcount((*hashes++) ^ (*query + 15));
+    sum += popcount((*hashes++) ^ (*query + 16));
+    sum += popcount((*hashes++) ^ (*query + 17));
+    sum += popcount((*hashes++) ^ (*query + 18));
+    sum += popcount((*hashes++) ^ (*query + 19));
+)
+
+/* Default not unrolled */
+
+void hamming_top_n_default(uint64_t* hashes, uint64_t* query, uint64_t* query_start,
+                           uint64_t num_hashes, uint64_t query_len, uint64_t* best_rows) {
+    struct TopNQueue queue = create_queue(best_rows);
+    uint64_t sum = 0;
+    for (int i = 0; i < num_hashes; i++) {
+        sum = 0;
+        query = query_start;
+        for (int j = 0; j < query_len; j++) {
+            sum += popcount((*hashes++) ^ (*query++));
+        }
+        /* Only add ot output if its better than nth_so_far. We don't care about sorting*/
+        maybe_insert_into_queue(&queue, sum, i);
+    }
+}
+
+
 static void hamming_top_n(char **args, const npy_intp *dimensions,
                           const npy_intp *steps, void *data)
 {
     /* npy_intp n = dimensions[0]; <<- not sure what this is */
-    npy_intp i, j;
     npy_intp num_hashes = dimensions[1];  /* appears to be size of first dimension */
-    npy_intp hash_len = dimensions[2];  /* appears to be size of second dimension */
-    uint64_t *in1 = __builtin_assume_aligned((uint64_t*)args[0], 16);
-    uint64_t *in1_start = __builtin_assume_aligned((uint64_t*)args[0], 16);
-    uint64_t *in1_end = in1 + (hash_len * num_hashes);
-    uint64_t *in2 =  __builtin_assume_aligned((uint64_t*)args[1], 16);
-    uint64_t *in2_start = __builtin_assume_aligned((uint64_t*)args[1], 16);
+    npy_intp query_len = dimensions[2];  /* appears to be size of second dimension */
+    uint64_t *hashes = __builtin_assume_aligned((uint64_t*)args[0], 16);
+    uint64_t *hashes_start = __builtin_assume_aligned((uint64_t*)args[0], 16);
+    uint64_t *hashes_end = hashes + (query_len * num_hashes);
+    uint64_t *query =  __builtin_assume_aligned((uint64_t*)args[1], 16);
+    uint64_t *query_start = __builtin_assume_aligned((uint64_t*)args[1], 16);
+    uint64_t *best_rows = __builtin_assume_aligned((uint64_t*)args[2], 16);
 
-    struct TopNQueue queue = create_queue((uint64_t*)args[2]);
-
-    uint64_t sum = 0;
-    for (i = 0; i < num_hashes; i++) {
-        sum = 0;
-        in2 = in2_start;
-        for (j = 0; j < hash_len; j++) {
-          sum += popcount((*in1++) ^ (*in2++));
-        }
-
-        /* Only add ot output if its better than nth_so_far. We don't care about sorting*/
-        maybe_insert_into_queue(&queue, sum, i);
+    switch (query_len) {
+        case 1:
+            hamming_top_n_hash_1(hashes, query, num_hashes, best_rows);
+            return;
+        case 2:
+            hamming_top_n_hash_2(hashes, query, num_hashes, best_rows);
+            return;
+        case 3:
+            hamming_top_n_hash_3(hashes, query, num_hashes, best_rows);
+            return;
+        case 4:
+            hamming_top_n_hash_4(hashes, query, num_hashes, best_rows);
+            return;
+        case 5:
+            hamming_top_n_hash_5(hashes, query, num_hashes, best_rows);
+            return;
+        case 6:
+            hamming_top_n_hash_6(hashes, query, num_hashes, best_rows);
+            return;
+        case 7:
+            hamming_top_n_hash_7(hashes, query, num_hashes, best_rows);
+            return;
+        case 8:
+            hamming_top_n_hash_8(hashes, query, num_hashes, best_rows);
+            return;
+        case 9:
+            hamming_top_n_hash_9(hashes, query, num_hashes, best_rows);
+            return;
+        case 10:  /* start to get diminishing returns -- rolled: 101 unrolled: 111 */
+            hamming_top_n_hash_10(hashes, query, num_hashes, best_rows);
+            return;
+        /*case 20: /* unrolled: 58.13; rolled 56.96
+            hamming_top_n_hash_20(hashes, query, num_hashes, best_rows);
+            return; */
+        default:
+            hamming_top_n_default(hashes, query, query_start, num_hashes, query_len, best_rows);
+            return;
     }
 }
 
