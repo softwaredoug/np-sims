@@ -57,7 +57,7 @@ def most_similar_cos(vectors, query_idx):
     return top_idxs, sims[top_idxs]
 
 
-def benchmark(terms, vectors, projs, hashes, query_fn):
+def benchmark(terms, vectors, projs, hashes, query_fn, debug=False):
 
     # Randomly select 100 terms
     query_idxs = np.random.randint(0, len(terms), size=100)
@@ -97,8 +97,8 @@ def benchmark(terms, vectors, projs, hashes, query_fn):
         recall = len(set(result).intersection(set(result_gt))) / len(result_gt)
         query_term = terms[query_idx]
         avg_recall += recall
-        print("----------------------------")
-        print(f"Term: {query_term} | Recall: {recall}")
+        print("----------------------------") if debug else None
+        print(f"Term: {query_term} | Recall: {recall}") if debug else None
 
         term_with_sims = list(zip([terms[idx] for idx in result[:10]] , sims))
         term_with_sims_gt = list(zip([terms[idx] for idx in result_gt[:10]] , sims_gt))
@@ -106,15 +106,17 @@ def benchmark(terms, vectors, projs, hashes, query_fn):
         term_with_sims.sort(key=lambda x: x[1], reverse=False)
         term_with_sims_gt.sort(key=lambda x: x[1], reverse=True)
 
-        print(f"LSH: {term_with_sims}")
-        print(f" GT: {term_with_sims_gt}")
+        print(f"LSH: {term_with_sims}") if debug else None
+        print(f" GT: {term_with_sims_gt}") if debug else None
     avg_recall /= len(query_idxs)
 
     print("----------------------")
 
     time_per_query = execution_times / len(query_idxs)
     qps = len(query_idxs) / execution_times
-    pstats.Stats("top_n.prof").strip_dirs().sort_stats("cumulative").print_stats(20)
+    pstats.Stats("top_n.prof").strip_dirs().sort_stats("cumulative").print_stats(20) if debug else None
+    print("----------------------")
+    print("Run num queries: ", len(query_idxs))
     print(f"Mean recall: {avg_recall}")
     print(f"  Exec time: {time_per_query}")
     print(f"        QPS: {qps}")
@@ -166,3 +168,14 @@ if __name__ == "__main__":
     for num_projections, result in results:
         qps, recall = result
         print(f"{num_projections} projections -- QPS {qps} -- Recall {recall}")
+
+
+#-------------------------------
+# Loop unrolled
+# 64 projections -- QPS 840.2823049187605 -- Recall 0.1289999999999998
+# 128 projections -- QPS 594.8292691966128 -- Recall 0.193
+# 256 projections -- QPS 365.12440313724113 -- Recall 0.25200000000000006
+# 512 projections -- QPS 194.034303547326 -- Recall 0.40800000000000003
+# 640 projections -- QPS 146.14705980853586 -- Recall 0.41000000000000014
+# 1280 projections -- QPS 57.83595190887417 -- Recall 0.5739999999999997
+# 2560 projections -- QPS 38.97597500828167 -- Recall 0.6549999999999996

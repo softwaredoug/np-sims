@@ -76,7 +76,7 @@ static void hamming(char **args, const npy_intp *dimensions,
     npy_intp i, j;
     npy_intp num_hashes = dimensions[1];  /* appears to be size of first dimension */
     npy_intp n2 = dimensions[2];  /* appears to be size of second dimension */
-    char *in1 = args[0], *in2 = args[1], *in1_start = args[0], *in2_start = args[1];
+    char *in1 = args[0], *in2 = args[1], *in2_start = args[1];
     char *out1 = args[2];
 
     uint64_t xord = 0;
@@ -134,6 +134,13 @@ struct TopNQueue create_queue(uint64_t* best_rows) {
     return queue;
 }
 
+/*
+ *
+ *
+ *
+ *
+ */
+
 inline void maybe_insert_into_queue(struct TopNQueue* queue, uint64_t sim_score, uint64_t row_index) {
    if (sim_score < queue->worst_in_queue) {
      if (queue->out_queue_end < N) {
@@ -147,7 +154,7 @@ inline void maybe_insert_into_queue(struct TopNQueue* queue, uint64_t sim_score,
      }
      /* find new worst_in_queue */
      queue->worst_in_queue = 0;
-     for (int output_idx = 0; output_idx < 10; output_idx++) {
+     for (uint64_t output_idx = 0; output_idx < N; output_idx++) {
        if (queue->top_n_sim_scores[output_idx] > queue->worst_in_queue) {
          queue->worst_in_queue = queue->top_n_sim_scores[output_idx];
          queue->worst_in_queue_index = output_idx;
@@ -277,10 +284,10 @@ void hamming_top_n_default(uint64_t* hashes, uint64_t* query, uint64_t* query_st
                            uint64_t num_hashes, uint64_t query_len, uint64_t* best_rows) {
     struct TopNQueue queue = create_queue(best_rows);
     uint64_t sum = 0;
-    for (int i = 0; i < num_hashes; i++) {
+    for (uint64_t i = 0; i < num_hashes; i++) {
         sum = 0;
         query = query_start;
-        for (int j = 0; j < query_len; j++) {
+        for (uint64_t j = 0; j < query_len; j++) {
             sum += popcount((*hashes++) ^ (*query++));
         }
         /* Only add ot output if its better than nth_so_far. We don't care about sorting*/
@@ -296,8 +303,6 @@ static void hamming_top_n(char **args, const npy_intp *dimensions,
     npy_intp num_hashes = dimensions[1];  /* appears to be size of first dimension */
     npy_intp query_len = dimensions[2];  /* appears to be size of second dimension */
     uint64_t *hashes = __builtin_assume_aligned((uint64_t*)args[0], 16);
-    uint64_t *hashes_start = __builtin_assume_aligned((uint64_t*)args[0], 16);
-    uint64_t *hashes_end = hashes + (query_len * num_hashes);
     uint64_t *query =  __builtin_assume_aligned((uint64_t*)args[1], 16);
     uint64_t *query_start = __builtin_assume_aligned((uint64_t*)args[1], 16);
     uint64_t *best_rows = __builtin_assume_aligned((uint64_t*)args[2], 16);
