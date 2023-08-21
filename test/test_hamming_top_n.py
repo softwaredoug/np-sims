@@ -31,6 +31,14 @@ hamming_tests = [
      [0b0010] + [0] * 20,
      as_top_n([0, 1])),
 
+    # Detect cases where we dereference the pointer incorrectly (add one to teh value, not teh pointer)
+    ([[0b0001, 0b0001],  # Very dissimilar, but QUERY turns int 0b0001 0b0001
+      [0b0000, 0b0000], [0b0000, 0b0000], [0b0000, 0b0000],
+      [0b0000, 0b0000], [0b0000, 0b0000], [0b0000, 0b0000], [0b0000, 0b0001], [0b0000, 0b0000], [0b0000, 0b0000],
+      [0b0000, 0b0000]],
+     [0b0000, 0b0000],  # Due to bad dereference, turns into 0b0000 0b0001
+     as_top_n([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])),
+
     # Various cases with very long hashes, probably not unrolled
     ([[0b0010] + [0] * 20 + [1], [0b1101] + [0] * 20 + [0]],
      [0b0010] + [0] * 20 + [1],

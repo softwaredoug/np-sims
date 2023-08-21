@@ -175,114 +175,101 @@ void hamming_top_n_hash_##N(uint64_t* hashes, uint64_t* query, \
     } \
 }
 
+/* 64 bits */
 HAMMING_TOP_N_HASH(1,
     sum = popcount((*hashes++) ^ (*query));
 )
 
+/* 128 bits */
 HAMMING_TOP_N_HASH(2,
     sum = popcount((*hashes++) ^ (*query));
-    sum += popcount((*hashes++) ^ (*query + 1));
+    sum += popcount((*hashes++) ^ query[1]);
 )
 
+/* 192 bits */
 HAMMING_TOP_N_HASH(3,
     sum = popcount((*hashes++) ^ (*query));
-    sum += popcount((*hashes++) ^ (*query + 1));
-    sum += popcount((*hashes++) ^ (*query + 2));
+    sum += popcount((*hashes++) ^ query[1]);
+    sum += popcount((*hashes++) ^ query[2]);
 )
 
+/* 256 bits */
 HAMMING_TOP_N_HASH(4,
     sum = popcount((*hashes++) ^ (*query));
-    sum += popcount((*hashes++) ^ (*query + 1));
-    sum += popcount((*hashes++) ^ (*query + 2));
-    sum += popcount((*hashes++) ^ (*query + 3));
+    sum += popcount((*hashes++) ^ query[1]);
+    sum += popcount((*hashes++) ^ query[2]);
+    sum += popcount((*hashes++) ^ query[3]);
 )
 
+/* 320 bits */
 HAMMING_TOP_N_HASH(5,
     sum = popcount((*hashes++) ^ (*query));
-    sum += popcount((*hashes++) ^ (*query + 1));
-    sum += popcount((*hashes++) ^ (*query + 2));
-    sum += popcount((*hashes++) ^ (*query + 3));
-    sum += popcount((*hashes++) ^ (*query + 4));
+    sum += popcount((*hashes++) ^ query[1]);
+    sum += popcount((*hashes++) ^ query[2]);
+    sum += popcount((*hashes++) ^ query[3]);
+    sum += popcount((*hashes++) ^ query[4]);
 )
 
+/* 384 bits */
 HAMMING_TOP_N_HASH(6,
     sum = popcount((*hashes++) ^ (*query));
-    sum += popcount((*hashes++) ^ (*query + 1));
-    sum += popcount((*hashes++) ^ (*query + 2));
-    sum += popcount((*hashes++) ^ (*query + 3));
-    sum += popcount((*hashes++) ^ (*query + 4));
-    sum += popcount((*hashes++) ^ (*query + 5));
+    sum += popcount((*hashes++) ^ query[1]);
+    sum += popcount((*hashes++) ^ query[2]);
+    sum += popcount((*hashes++) ^ query[3]);
+    sum += popcount((*hashes++) ^ query[4]);
+    sum += popcount((*hashes++) ^ query[5]);
 )
 
+/* 448 bits */
 HAMMING_TOP_N_HASH(7,
     sum = popcount((*hashes++) ^ (*query));
-    sum += popcount((*hashes++) ^ (*query + 1));
-    sum += popcount((*hashes++) ^ (*query + 2));
-    sum += popcount((*hashes++) ^ (*query + 3));
-    sum += popcount((*hashes++) ^ (*query + 4));
-    sum += popcount((*hashes++) ^ (*query + 5));
-    sum += popcount((*hashes++) ^ (*query + 6));
+    sum += popcount((*hashes++) ^ query[1]);
+    sum += popcount((*hashes++) ^ query[2]);
+    sum += popcount((*hashes++) ^ query[3]);
+    sum += popcount((*hashes++) ^ query[4]);
+    sum += popcount((*hashes++) ^ query[5]);
+    sum += popcount((*hashes++) ^ query[6]);
 )
 
+/* 512 bits */
 HAMMING_TOP_N_HASH(8,
     sum = popcount((*hashes++) ^ (*query));
-    sum += popcount((*hashes++) ^ (*query + 1));
-    sum += popcount((*hashes++) ^ (*query + 2));
-    sum += popcount((*hashes++) ^ (*query + 3));
-    sum += popcount((*hashes++) ^ (*query + 4));
-    sum += popcount((*hashes++) ^ (*query + 5));
-    sum += popcount((*hashes++) ^ (*query + 6));
-    sum += popcount((*hashes++) ^ (*query + 7));
+    sum += popcount((*hashes++) ^ query[1]);
+    sum += popcount((*hashes++) ^ query[2]);
+    sum += popcount((*hashes++) ^ query[3]);
+    sum += popcount((*hashes++) ^ query[4]);
+    sum += popcount((*hashes++) ^ query[5]);
+    sum += popcount((*hashes++) ^ query[6]);
+    sum += popcount((*hashes++) ^ query[7]);
 )
 
+/* 576 bits */
 HAMMING_TOP_N_HASH(9,
     sum = popcount((*hashes++) ^ (*query));
-    sum += popcount((*hashes++) ^ (*query + 1));
-    sum += popcount((*hashes++) ^ (*query + 2));
-    sum += popcount((*hashes++) ^ (*query + 3));
-    sum += popcount((*hashes++) ^ (*query + 4));
-    sum += popcount((*hashes++) ^ (*query + 5));
-    sum += popcount((*hashes++) ^ (*query + 6));
-    sum += popcount((*hashes++) ^ (*query + 7));
-    sum += popcount((*hashes++) ^ (*query + 8));
+    sum += popcount((*hashes++) ^ query[1]);
+    sum += popcount((*hashes++) ^ query[2]);
+    sum += popcount((*hashes++) ^ query[3]);
+    sum += popcount((*hashes++) ^ query[4]);
+    sum += popcount((*hashes++) ^ query[5]);
+    sum += popcount((*hashes++) ^ query[6]);
+    sum += popcount((*hashes++) ^ query[7]);
+    sum += popcount((*hashes++) ^ query[8]);
 )
 
+/* 640 bits */
 HAMMING_TOP_N_HASH(10,
     sum = popcount((*hashes++) ^ (*query));
-    sum += popcount((*hashes++) ^ (*query + 1));
-    sum += popcount((*hashes++) ^ (*query + 2));
-    sum += popcount((*hashes++) ^ (*query + 3));
-    sum += popcount((*hashes++) ^ (*query + 4));
-    sum += popcount((*hashes++) ^ (*query + 5));
-    sum += popcount((*hashes++) ^ (*query + 6));
-    sum += popcount((*hashes++) ^ (*query + 7));
-    sum += popcount((*hashes++) ^ (*query + 8));
-    sum += popcount((*hashes++) ^ (*query + 9));
+    sum += popcount((*hashes++) ^ query[1]);
+    sum += popcount((*hashes++) ^ query[2]);
+    sum += popcount((*hashes++) ^ query[3]);
+    sum += popcount((*hashes++) ^ query[4]);
+    sum += popcount((*hashes++) ^ query[5]);
+    sum += popcount((*hashes++) ^ query[6]);
+    sum += popcount((*hashes++) ^ query[7]);
+    sum += popcount((*hashes++) ^ query[8]);
+    sum += popcount((*hashes++) ^ query[9]);
 )
 
-/* An absurd case, just for testing */
-HAMMING_TOP_N_HASH(20,
-    sum = popcount((*hashes++) ^ (*query));
-    sum += popcount((*hashes++) ^ (*query + 1));
-    sum += popcount((*hashes++) ^ (*query + 2));
-    sum += popcount((*hashes++) ^ (*query + 3));
-    sum += popcount((*hashes++) ^ (*query + 4));
-    sum += popcount((*hashes++) ^ (*query + 5));
-    sum += popcount((*hashes++) ^ (*query + 6));
-    sum += popcount((*hashes++) ^ (*query + 7));
-    sum += popcount((*hashes++) ^ (*query + 8));
-    sum += popcount((*hashes++) ^ (*query + 9));
-    sum += popcount((*hashes++) ^ (*query + 10));
-    sum += popcount((*hashes++) ^ (*query + 11));
-    sum += popcount((*hashes++) ^ (*query + 12));
-    sum += popcount((*hashes++) ^ (*query + 13));
-    sum += popcount((*hashes++) ^ (*query + 14));
-    sum += popcount((*hashes++) ^ (*query + 15));
-    sum += popcount((*hashes++) ^ (*query + 16));
-    sum += popcount((*hashes++) ^ (*query + 17));
-    sum += popcount((*hashes++) ^ (*query + 18));
-    sum += popcount((*hashes++) ^ (*query + 19));
-)
 
 /* Default not unrolled */
 
@@ -346,9 +333,6 @@ static void hamming_top_n(char **args, const npy_intp *dimensions,
         case 10:  /* start to get diminishing returns -- rolled: 101 unrolled: 111 */
             hamming_top_n_hash_10(hashes, query, num_hashes, best_rows);
             return;
-        /*case 20: /* unrolled: 58.13; rolled 56.96
-            hamming_top_n_hash_20(hashes, query, num_hashes, best_rows);
-            return; */
         default:
             hamming_top_n_default(hashes, query, query_start, num_hashes, query_len, best_rows);
             return;
