@@ -11,9 +11,8 @@ import sys
 cwd = os.getcwd()
 sys.path.append(cwd)
 
-from np_sims.lsh import index, query_with_hamming_top_n, query_with_hamming_then_slow_argsort, create_projections  # noqa: E402
-from np_sims import hamming_c  # noqa: E402, F401
-from np_sims.hamming import hamming_naive  # noqa: E402, F401
+from np_sims.lsh import index, create_projections  # noqa: E402
+from np_sims.lsh import query_with_hamming_then_slow_argsort, query_pure_python, query_with_hamming_top_n  # noqa: E402
 
 
 def glove(num_to_sample=10000000):
@@ -58,7 +57,7 @@ def most_similar_cos(vectors, query_idx):
     return top_idxs, sims[top_idxs]
 
 
-def benchmark(terms, vectors, projs, hashes):
+def benchmark(terms, vectors, projs, hashes, query_fn):
 
     # Randomly select 100 terms
     query_idxs = np.random.randint(0, len(terms), size=100)
@@ -71,22 +70,16 @@ def benchmark(terms, vectors, projs, hashes):
 
     zero_sims = [0] * 10
 
-    compare = False
     with cProfile.Profile() as pr:
         # Run LSH
         results = []
         execution_times = 0
         for query_idx in query_idxs:
             start = perf_counter()
-            result, sims = query_with_hamming_top_n(vectors[query_idx], hashes, projs)
+            result, sims = query_fn(vectors[query_idx], hashes, projs)
             execution_times += perf_counter() - start
             if sims is None:
                 sims = zero_sims
-            if compare:
-                result_slow, slow_sims = query_with_hamming_then_slow_argsort(vectors[query_idx], hashes, projs, hamming_func=hamming_naive)
-                # result_slow = sorted(result_slow)
-                # if sorted(result) != result_slow:
-                #     print("Mismatch")
             results.append(list(zip(result, sims)))
 
         pr.dump_stats("top_n.prof")
@@ -126,6 +119,8 @@ def benchmark(terms, vectors, projs, hashes):
     print(f"  Exec time: {time_per_query}")
     print(f"        QPS: {qps}")
 
+    return qps, avg_recall
+
 
 def load_or_build_index(vectors, num_projections=640):
     dims = vectors.shape[1]
@@ -149,9 +144,25 @@ def load_or_build_index(vectors, num_projections=640):
 
 if __name__ == "__main__":
     terms, vectors = glove()
-    num_projections = int(sys.argv[1]) if len(sys.argv) > 1 else 64
+    query_method = "pure_python" if len(sys.argv) < 2 else sys.argv[1]
 
-    hashes, projs = load_or_build_index(vectors, num_projections)
-    print("Done indexing")
+    if query_method == "pure_python":
+        query_fn = query_pure_python
+    elif query_method == "pure_c":
+        query_fn = query_with_hamming_top_n
+    elif query_method == "hamming_c":
+        query_fn = query_with_hamming_then_slow_argsort
 
-    benchmark(terms, vectors, projs, hashes)
+    results = []
+    for projections in sys.argv[2:]:
+        num_projections = int(projections)
+        print(f"Running with {num_projections} projections")
+
+        hashes, projs = load_or_build_index(vectors, num_projections)
+        print("Done indexing")
+
+        results.append((num_projections, benchmark(terms, vectors, projs, hashes, query_fn)))
+
+    for num_projections, result in results:
+        qps, recall = result
+        print(f"{num_projections} projections -- QPS {qps} -- Recall {recall}")

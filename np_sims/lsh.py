@@ -1,5 +1,5 @@
 import numpy as np
-from np_sims import hamming_c, hamming_top_n
+from np_sims import hamming_c, hamming_top_n, hamming_naive
 
 
 def random_projection(dims):
@@ -63,6 +63,17 @@ def index(vectors, projections):
 
 def query_with_hamming_then_slow_argsort(vector, hashes, projections, hamming_func=hamming_c, n=10):
     """Query using C-based hamming similarity."""
+    # Compute the hashes for the vector
+    query_hash = index([vector], projections)[0]
+    # Compute the hamming distance between the query and all hashes
+    hammings = hamming_func(hashes, query_hash)
+    # Sort ascending, 0 is most similar <-- actual bottleneck
+    idxs = np.argsort(hammings)[:n]
+    lsh_sims = hammings[idxs]
+    return idxs, lsh_sims
+
+
+def query_pure_python(vector, hashes, projections, hamming_func=hamming_naive, n=10):
     # Compute the hashes for the vector
     query_hash = index([vector], projections)[0]
     # Compute the hamming distance between the query and all hashes
