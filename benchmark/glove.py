@@ -58,10 +58,10 @@ def most_similar_cos(vectors, query_idx):
     return top_idxs, sims[top_idxs]
 
 
-def benchmark(terms, vectors, projs, hashes, query_fn, debug=False, workers=8):
+def benchmark(terms, vectors, projs, hashes, query_fn, debug=False, workers=4):
 
     # Randomly select 100 terms
-    query_idxs = np.random.randint(0, len(terms), size=1000)
+    query_idxs = np.random.randint(0, len(terms), size=100)
 
     # Collect groundtruths
     results_gt = []
@@ -89,7 +89,6 @@ def benchmark(terms, vectors, projs, hashes, query_fn, debug=False, workers=8):
 
             for future in as_completed(futures):
                 result, sims, time = future.result()
-                result, sims = query_fn(vectors[query_idx], hashes, projs)
                 stop = perf_counter()
                 single_query_times += time
                 if sims is None:

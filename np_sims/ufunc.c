@@ -24,6 +24,10 @@
  * docs.python.org.
  */
 
+#ifndef NPY_ALLOW_THREADS
+#error NPY_ALLOW_THREADS must be defined
+#endif
+
 static PyMethodDef LogitMethods[] = {
     {NULL, NULL, 0, NULL}
 };
@@ -176,10 +180,12 @@ void hamming_top_n_hash_##N(uint64_t* hashes, uint64_t* query, \
                           uint64_t num_hashes, uint64_t* best_rows) { \
     struct TopNQueue queue = create_queue(best_rows); \
     uint64_t sum = 0; \
+    NPY_BEGIN_ALLOW_THREADS \
     for (uint64_t i = 0; i < num_hashes; i++) { \
       BODY; \
       maybe_insert_into_queue(&queue, sum, i); \
     } \
+    NPY_END_ALLOW_THREADS \
 }
 
 /* 64 bits */
@@ -299,6 +305,7 @@ void hamming_top_n_default(uint64_t* hashes, uint64_t* query, uint64_t* query_st
 static void hamming_top_n(char **args, const npy_intp *dimensions,
                           const npy_intp *steps, void *data)
 {
+
     /* npy_intp n = dimensions[0]; <<- not sure what this is */
     npy_intp num_hashes = dimensions[1];  /* appears to be size of first dimension */
     npy_intp query_len = dimensions[2];  /* appears to be size of second dimension */
