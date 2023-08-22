@@ -4,6 +4,7 @@ from data_dir import read_np, write_np, read_lines, write_lines, lines_of
 from time import perf_counter
 import cProfile
 import pstats
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Get current working dir
 import os
@@ -57,7 +58,7 @@ def most_similar_cos(vectors, query_idx):
     return top_idxs, sims[top_idxs]
 
 
-def benchmark(terms, vectors, projs, hashes, query_fn, debug=False):
+def benchmark(terms, vectors, projs, hashes, query_fn, debug=False, workers=8):
 
     # Randomly select 100 terms
     query_idxs = np.random.randint(0, len(terms), size=1000)
@@ -70,17 +71,31 @@ def benchmark(terms, vectors, projs, hashes, query_fn, debug=False):
 
     zero_sims = [0] * 10
 
+    def query(query_idx):
+        start = perf_counter()
+        result, sims = query_fn(vectors[query_idx], hashes, projs)
+        return result, sims, perf_counter() - start
+
     with cProfile.Profile() as pr:
         # Run LSH
         results = []
-        execution_times = 0
-        for query_idx in query_idxs:
+        execution_times = 0     # Total wall time running the queries
+        single_query_times = 0  # Time per query in its thread
+        futures = []
+        with ThreadPoolExecutor(max_workers=workers) as executor:
             start = perf_counter()
-            result, sims = query_fn(vectors[query_idx], hashes, projs)
-            execution_times += perf_counter() - start
-            if sims is None:
-                sims = zero_sims
-            results.append(list(zip(result, sims)))
+            for query_idx in query_idxs:
+                futures.append(executor.submit(query, query_idx))
+
+            for future in as_completed(futures):
+                result, sims, time = future.result()
+                result, sims = query_fn(vectors[query_idx], hashes, projs)
+                stop = perf_counter()
+                single_query_times += time
+                if sims is None:
+                    sims = zero_sims
+                results.append(list(zip(result, sims)))
+            execution_times = stop - start
 
         pr.dump_stats("top_n.prof")
 
