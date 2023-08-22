@@ -58,27 +58,29 @@ def most_similar_cos(vectors, query_idx):
     return top_idxs, sims[top_idxs]
 
 
-def benchmark(terms, vectors, projs, hashes, query_fn, debug=False, workers=4):
+def benchmark(terms, vectors, projs, hashes, query_fn, debug=False, workers=4, num_queries=1000):
 
-    # Randomly select 100 terms
-    query_idxs = np.random.randint(0, len(terms), size=100)
+    # Randomly select N terms
+    query_idxs = np.random.randint(0, len(terms), size=num_queries)
 
     # Collect groundtruths
-    results_gt = []
+    gt_time = perf_counter()
+    results_gt = {}
     for query_idx in query_idxs:
         result, sims = most_similar_cos(vectors, query_idx)
-        results_gt.append(list(zip(result, sims)))
+        gt_time += (perf_counter() - gt_time)
+        results_gt[query_idx] = list(zip(result, sims))
 
     zero_sims = [0] * 10
 
     def query(query_idx):
         start = perf_counter()
         result, sims = query_fn(vectors[query_idx], hashes, projs)
-        return result, sims, perf_counter() - start
+        return query_idx, result, sims, perf_counter() - start
 
     with cProfile.Profile() as pr:
         # Run LSH
-        results = []
+        results = {}
         execution_times = 0     # Total wall time running the queries
         single_query_times = 0  # Time per query in its thread
         futures = []
@@ -88,12 +90,12 @@ def benchmark(terms, vectors, projs, hashes, query_fn, debug=False, workers=4):
                 futures.append(executor.submit(query, query_idx))
 
             for future in as_completed(futures):
-                result, sims, time = future.result()
+                query_idx, result, sims, time = future.result()
                 stop = perf_counter()
                 single_query_times += time
                 if sims is None:
                     sims = zero_sims
-                results.append(list(zip(result, sims)))
+                results[query_idx] = list(zip(result, sims))
             execution_times = stop - start
 
         pr.dump_stats("top_n.prof")
@@ -101,7 +103,10 @@ def benchmark(terms, vectors, projs, hashes, query_fn, debug=False, workers=4):
     # Report results
     recall = 0
     avg_recall = 0
-    for query_idx, result, result_gt in zip(query_idxs, results, results_gt):
+    for query_idx in query_idxs:
+        result = results[query_idx]
+        result_gt = results_gt[query_idx]
+
         sims = [float(r[1]) for r in result]
         sims_gt = [float(r[1]) for r in result_gt]
 
@@ -124,12 +129,11 @@ def benchmark(terms, vectors, projs, hashes, query_fn, debug=False, workers=4):
         print(f" GT: {term_with_sims_gt}") if debug else None
     avg_recall /= len(query_idxs)
 
-    time_per_query = execution_times / len(query_idxs)
     qps = len(query_idxs) / execution_times
     pstats.Stats("top_n.prof").strip_dirs().sort_stats("cumulative").print_stats(20) if debug else None
     print("Run num queries: ", len(query_idxs))
     print(f"Mean recall: {avg_recall}")
-    print(f"  Exec time: {time_per_query}")
+    print(f"     GT QPS: {len(query_idxs) / gt_time}")
     print(f"        QPS: {qps}")
     print("----------------------")
 
@@ -182,7 +186,21 @@ if __name__ == "__main__":
         qps, recall = result
         print(f"{num_projections} projections -- QPS {qps} -- Recall {recall}")
 
-
+# -------------------------------
+# Just C, no optimizations
+#
+#
+#    64 projections -- QPS 355.0464873171851 -- Recall 0.136499999999998
+#    128 projections -- QPS 241.46964706002143 -- Recall 0.19549999999999798
+#    256 projections -- QPS 146.8177150077879 -- Recall 0.283999999999999
+#    512 projections -- QPS 130.2396482333485 -- Recall 0.38470000000000054
+#    640 projections -- QPS 96.629607995171 -- Recall 0.4202000000000004
+#    1280 projections -- QPS 55.37952621776572 -- Recall 0.5329
+#    2560 projections -- QPS 29.13870808612148 -- Recall 0.6328999999999989
+#
+#
+#
+#
 # -------------------------------
 # Loop unrolled
 # 64 projections -- QPS 840.2823049187605 -- Recall 0.1289999999999998
@@ -192,3 +210,16 @@ if __name__ == "__main__":
 # 640 projections -- QPS 146.14705980853586 -- Recall 0.41000000000000014
 # 1280 projections -- QPS 57.83595190887417 -- Recall 0.5739999999999997
 # 2560 projections -- QPS 38.97597500828167 -- Recall 0.6549999999999996
+#
+#
+#
+# -------------------------------
+# Threading enabled (ie not GIL bound)
+#
+# 64 projections -- QPS 2395.0580356424443 -- Recall 0.12969999999999815
+# 128 projections -- QPS 1556.6209180039205 -- Recall 0.19139999999999796
+# 256 projections -- QPS 870.3183265554875 -- Recall 0.2803999999999986
+# 512 projections -- QPS 499.93975726613667 -- Recall 0.3816000000000004
+# 640 projections -- QPS 358.7610832214154 -- Recall 0.41790000000000066
+# 1280 projections -- QPS 167.48470966960681 -- Recall 0.5302000000000001
+# 2560 projections -- QPS 81.02739932963804 -- Recall 0.6396999999999985

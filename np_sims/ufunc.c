@@ -290,6 +290,7 @@ void hamming_top_n_default(uint64_t* hashes, uint64_t* query, uint64_t* query_st
                            uint64_t num_hashes, uint64_t query_len, uint64_t* best_rows) {
     struct TopNQueue queue = create_queue(best_rows);
     uint64_t sum = 0;
+    NPY_BEGIN_ALLOW_THREADS
     for (uint64_t i = 0; i < num_hashes; i++) {
         sum = 0;
         query = query_start;
@@ -299,6 +300,7 @@ void hamming_top_n_default(uint64_t* hashes, uint64_t* query, uint64_t* query_st
         /* Only add ot output if its better than nth_so_far. We don't care about sorting*/
         maybe_insert_into_queue(&queue, sum, i);
     }
+    NPY_END_ALLOW_THREADS
 }
 
 
