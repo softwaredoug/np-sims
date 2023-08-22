@@ -93,8 +93,6 @@ static void hamming(char **args, const npy_intp *dimensions,
           sum += popcount(xord);
           in2 += sizeof(uint64_t);
           in1 += sizeof(uint64_t);
-          /* printf("value1: %llu, value2: %llu, xord: %llu, sum: %llu\n", value1, value2, xord, sum); */
-          /* END main ufunc computation */
         }
         (*((uint64_t *)out1)) = sum;
 
@@ -141,7 +139,7 @@ struct TopNQueue create_queue(uint64_t* best_rows) {
  *
  */
 
-inline void maybe_insert_into_queue(struct TopNQueue* queue, uint64_t sim_score, uint64_t row_index) {
+void maybe_insert_into_queue(struct TopNQueue* queue, uint64_t sim_score, uint64_t row_index) {
    if (sim_score < queue->worst_in_queue) {
      if (queue->out_queue_end < N) {
        queue->best_rows[queue->out_queue_end] = row_index;
@@ -175,7 +173,7 @@ inline void maybe_insert_into_queue(struct TopNQueue* queue, uint64_t sim_score,
 void hamming_top_n_hash_##N(uint64_t* hashes, uint64_t* query, \
                           uint64_t num_hashes, uint64_t* best_rows) { \
     struct TopNQueue queue = create_queue(best_rows); \
-    uint64_t sum = 0; \
+    uint64_t sum; \
     for (uint64_t i = 0; i < num_hashes; i++) { \
       BODY; \
       maybe_insert_into_queue(&queue, sum, i); \
@@ -357,6 +355,26 @@ static char types[3] = {NPY_UINT64, NPY_UINT64,
 static char hamming_types[3] = {NPY_UINT64, NPY_UINT64,
                                 NPY_UINT64};
 
+static const unsigned int num_threads = 8;
+
+static unsigned int thread_ids[num_threads] = {PYTHREAD_INVALID_THREAD_ID,
+                                               PYTHREAD_INVALID_THREAD_ID,
+                                               PYTHREAD_INVALID_THREAD_ID,
+                                               PYTHREAD_INVALID_THREAD_ID,
+                                               PYTHREAD_INVALID_THREAD_ID,
+                                               PYTHREAD_INVALID_THREAD_ID,
+                                               PYTHREAD_INVALID_THREAD_ID,
+                                               PYTHREAD_INVALID_THREAD_ID};
+
+void cleanup(void *arg) {
+    printf(">> Cleanup thread\n");
+    for (unsigned int i = 0; i < num_threads; i++) {
+        if (thread_ids[i] != PYTHREAD_INVALID_THREAD_ID) {
+            PyThreadState_SetAsyncExc(thread_ids[i], PyExc_SystemExit);
+        }
+    }
+}
+
 static struct PyModuleDef moduledef = {
     PyModuleDef_HEAD_INIT,
     "ufuncs",
@@ -369,9 +387,24 @@ static struct PyModuleDef moduledef = {
     NULL
 };
 
+void worker() {
+    printf(">> Worker thread\n");
+    return;
+}
+
 PyMODINIT_FUNC PyInit_ufuncs(void)
 {
     PyObject *m, *num_unshared, *hamming_ufunc, *hamming_n_ufunc, *d;
+
+    unsigned long thread_id = PyThread_start_new_thread(worker, NULL);
+    for (unsigned int i = 0; i < num_threads; i++) {
+      if (thread_id == PYTHREAD_INVALID_THREAD_ID) {
+        printf("Unable to start thread\n");
+      } else {
+        printf("Thread started with id %ld\n", thread_id);
+        thread_ids[i] = thread_id;
+      }
+    }
 
     import_array();
     import_umath();
