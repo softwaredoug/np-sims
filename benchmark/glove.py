@@ -60,7 +60,7 @@ def most_similar_cos(vectors, query_idx):
 def benchmark(terms, vectors, projs, hashes, query_fn, debug=False):
 
     # Randomly select 100 terms
-    query_idxs = np.random.randint(0, len(terms), size=100)
+    query_idxs = np.random.randint(0, len(terms), size=1000)
 
     # Collect groundtruths
     results_gt = []
@@ -97,7 +97,7 @@ def benchmark(terms, vectors, projs, hashes, query_fn, debug=False):
         recall = len(set(result).intersection(set(result_gt))) / len(result_gt)
         query_term = terms[query_idx]
         avg_recall += recall
-        print("----------------------------") if debug else None
+        print("  ----------------------------") if debug else None
         print(f"Term: {query_term} | Recall: {recall}") if debug else None
 
         term_with_sims = list(zip([terms[idx] for idx in result[:10]] , sims))
@@ -110,16 +110,14 @@ def benchmark(terms, vectors, projs, hashes, query_fn, debug=False):
         print(f" GT: {term_with_sims_gt}") if debug else None
     avg_recall /= len(query_idxs)
 
-    print("----------------------")
-
     time_per_query = execution_times / len(query_idxs)
     qps = len(query_idxs) / execution_times
     pstats.Stats("top_n.prof").strip_dirs().sort_stats("cumulative").print_stats(20) if debug else None
-    print("----------------------")
     print("Run num queries: ", len(query_idxs))
     print(f"Mean recall: {avg_recall}")
     print(f"  Exec time: {time_per_query}")
     print(f"        QPS: {qps}")
+    print("----------------------")
 
     return qps, avg_recall
 
@@ -158,6 +156,7 @@ if __name__ == "__main__":
     results = []
     for projections in sys.argv[2:]:
         num_projections = int(projections)
+        print("----------------------")
         print(f"Running with {num_projections} projections")
 
         hashes, projs = load_or_build_index(vectors, num_projections)
@@ -170,7 +169,7 @@ if __name__ == "__main__":
         print(f"{num_projections} projections -- QPS {qps} -- Recall {recall}")
 
 
-#-------------------------------
+# -------------------------------
 # Loop unrolled
 # 64 projections -- QPS 840.2823049187605 -- Recall 0.1289999999999998
 # 128 projections -- QPS 594.8292691966128 -- Recall 0.193
