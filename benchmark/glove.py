@@ -58,25 +58,26 @@ def most_similar_cos(vectors, query_idx):
     return top_idxs, sims[top_idxs]
 
 
-def benchmark(terms, vectors, projs, hashes, query_fn, debug=False, workers=4, num_queries=1000):
+def benchmark(terms, vectors, projs, hashes, query_fn, debug=False, workers=8, num_queries=1000):
 
     # Randomly select N terms
     query_idxs = np.random.randint(0, len(terms), size=num_queries)
 
     # Collect groundtruths
-    gt_time = perf_counter()
+    gt_start = perf_counter()
+    gt_time = 0
     results_gt = {}
     for query_idx in query_idxs:
         result, sims = most_similar_cos(vectors, query_idx)
-        gt_time += (perf_counter() - gt_time)
+        gt_time += (perf_counter() - gt_start)
         results_gt[query_idx] = list(zip(result, sims))
 
     zero_sims = [0] * 10
 
     def query(query_idx):
-        start = perf_counter()
+        my_start = perf_counter()
         result, sims = query_fn(vectors[query_idx], hashes, projs)
-        return query_idx, result, sims, perf_counter() - start
+        return query_idx, result, sims, perf_counter() - my_start
 
     with cProfile.Profile() as pr:
         # Run LSH
@@ -130,10 +131,11 @@ def benchmark(terms, vectors, projs, hashes, query_fn, debug=False, workers=4, n
     avg_recall /= len(query_idxs)
 
     qps = len(query_idxs) / execution_times
+    gt_qp = len(query_idxs) / gt_time
     pstats.Stats("top_n.prof").strip_dirs().sort_stats("cumulative").print_stats(20) if debug else None
     print("Run num queries: ", len(query_idxs))
     print(f"Mean recall: {avg_recall}")
-    print(f"     GT QPS: {len(query_idxs) / gt_time}")
+    print(f"     GT QPS: {gt_qp}")
     print(f"        QPS: {qps}")
     print("----------------------")
 
@@ -185,6 +187,17 @@ if __name__ == "__main__":
     for num_projections, result in results:
         qps, recall = result
         print(f"{num_projections} projections -- QPS {qps} -- Recall {recall}")
+
+
+# --------------------------------
+# Pure Python
+#   64 projections -- QPS 15.089427548862796 -- Recall 0.13459999999999817
+#   128 projections -- QPS 9.34182765170921 -- Recall 0.188299999999998
+#   256 projections -- QPS 6.847121609496162 -- Recall 0.2648999999999981
+#   512 projections -- QPS 5.061889430500477 -- Recall 0.36490000000000017
+#   640 projections -- QPS 4.417822593950075 -- Recall 0.4122999999999998
+#   1280 projections -- QPS 2.6906025585082607 -- Recall 0.5301999999999994
+#   2560 projections -- QPS 1.2121089854928582 -- Recall 0.6400999999999979
 
 # -------------------------------
 # Just C, no optimizations
