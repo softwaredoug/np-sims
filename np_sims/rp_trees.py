@@ -117,8 +117,6 @@ def fit(vectors: np.ndarray, depth: int = 10):
     if depth > 1:
         left = fit(left, depth - 1) if len(left) > 1 else None
         right = fit(right, depth - 1) if len(right) > 1 else None
-        if depth == 3:
-            import pdb; pdb.set_trace()
 
         return root, left, right
     else:
@@ -136,19 +134,20 @@ def rp_hash(tree, vectors, hashes=None, depth=0):
     root, left, right = tree
     dotted = np.dot(vectors, root)
 
-    lhs_idx = np.argwhere(dotted < 0)
-    rhs_idx = np.argwhere(dotted >= 0)
+    lhs_idx = np.ravel(np.argwhere(dotted < 0))
+    rhs_idx = np.ravel(np.argwhere(dotted >= 0))
 
     print(f"Depth: {depth}, LHS: {lhs_idx}, RHS: {rhs_idx} -- vectors: {len(vectors)}")
 
     lhs_vectors = vectors[lhs_idx]
     rhs_vectors = vectors[rhs_idx]
 
-    rp_hash(left, lhs_vectors, hashes)
+    lhs_hashes = hashes[lhs_idx]
+    rhs_hashes = hashes[rhs_idx]
+
+    hashes[lhs_idx] |= rp_hash(left, lhs_vectors, lhs_hashes, depth - 1)
     # Set the 'depth' bit in rhs_idx
-    hashes[rhs_idx] |= 1 << depth
-    rp_hash(right, rhs_vectors, hashes, depth - 1)
-    rp_hash(right, rhs_vectors, hashes, depth - 1)
+    hashes[rhs_idx] |= (1 << depth) | (rp_hash(right, rhs_vectors, rhs_hashes, depth - 1))
 
     return hashes
 
