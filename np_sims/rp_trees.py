@@ -71,11 +71,10 @@ def projection_between(vect1: np.ndarray,
     """Get a vector that gives opposite signed dot products for vect1/vect2."""
     if (vect1 == vect2).all():
         raise ValueError("Vectors cannot be identical")
-
-    if vect1[dim] == 0.0 or vect2[dim] == 0.0:
-        raise ValueError(f"Dimension {dim} is 0, cannot find projection")
-
     dims = len(vect1)
+
+    while vect1[dim] == 0.0 or vect2[dim] == 0.0:
+        dim += 1
 
     # To get the floor / ceiling we solve an inequality
     # whose sign flips depending on whether vectn[dim] is
@@ -105,23 +104,53 @@ def projection_between(vect1: np.ndarray,
 
 def fit(vectors: np.ndarray, depth: int = 10):
     """Build a random projection tree from a set of vectors."""
-    # Pick two rano vectors to bisect the space
-    # and get the projections for each vector
-    # onto these two vectors
-    v1, v2 = np.random.randn(2, vectors.shape[1])
+    # Pick two random vectors from vectors
+    v1, v2 = vectors[np.random.choice(len(vectors), 2, replace=False)]
     root = projection_between(v1, v2)
 
     dotted = np.dot(vectors, root)
     left = vectors[dotted < 0]
     right = vectors[dotted >= 0]
+    assert len(left) != 0
+    assert len(right) != 0
 
-    # Recursively build the tree
     if depth > 1:
-        left = fit(left, depth - 1)
-        right = fit(right, depth - 1)
+        left = fit(left, depth - 1) if len(left) > 1 else None
+        right = fit(right, depth - 1) if len(right) > 1 else None
+        if depth == 3:
+            import pdb; pdb.set_trace()
+
         return root, left, right
     else:
         return root, None, None
+
+
+def rp_hash(tree, vectors, hashes=None, depth=0):
+    """Walk a vector down a tree to get a hash."""
+    if tree is None or depth < 0:
+        return hashes
+
+    if hashes is None:
+        hashes = np.zeros(dtype=np.uint64, shape=(len(vectors)))
+
+    root, left, right = tree
+    dotted = np.dot(vectors, root)
+
+    lhs_idx = np.argwhere(dotted < 0)
+    rhs_idx = np.argwhere(dotted >= 0)
+
+    print(f"Depth: {depth}, LHS: {lhs_idx}, RHS: {rhs_idx} -- vectors: {len(vectors)}")
+
+    lhs_vectors = vectors[lhs_idx]
+    rhs_vectors = vectors[rhs_idx]
+
+    rp_hash(left, lhs_vectors, hashes)
+    # Set the 'depth' bit in rhs_idx
+    hashes[rhs_idx] |= 1 << depth
+    rp_hash(right, rhs_vectors, hashes, depth - 1)
+    rp_hash(right, rhs_vectors, hashes, depth - 1)
+
+    return hashes
 
 
 def depth(tree):
