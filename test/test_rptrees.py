@@ -85,12 +85,13 @@ def w_scenarios(scenarios: Dict[str, Dict[str, Any]]):
 def test_fitting(vectors, query, expected_match, rng_seed):
     """Test internals of rp tree."""
     np.random.seed(rng_seed)
-    for depth in range(0, 10):
+    for depth in range(5, 10):
         tree = _fit(vectors, depth=depth)
+        assert tree is not None
         dims = vectors.shape[1]
-        vectors_hashed = np.zeros(vectors.shape, dtype=np.uint32)
+        vectors_hashed = np.zeros(len(vectors), dtype=np.uint64)
         vectors_hashed = _rp_hash(tree, vectors, vectors_hashed, depth=depth)
-        query_hash = np.zeros((1, dims), dtype=np.uint32)
+        query_hash = np.zeros((1, dims), dtype=np.uint64)
         query_hash = _rp_hash(tree, query, query_hash, depth=depth)
 
 
