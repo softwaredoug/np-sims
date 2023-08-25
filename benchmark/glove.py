@@ -100,7 +100,13 @@ def get_test_algorithms(cmd_args):
                 name = f"{query_method}_{num_projections}"
                 yield name, lsh_query_fn(query_method, hashes, projs)
         elif query_method == "rp_tree":
-            tree = RandomProjectionTree(vectors)
+            try:
+                tree = RandomProjectionTree.load('data/rp_tree.pkl')
+            except FileNotFoundError:
+                start = perf_counter()
+                tree = RandomProjectionTree.build(vectors)
+                print(f"Building tree took {perf_counter() - start} seconds")
+                tree.save('data/rp_tree.pkl')
             yield "rp_tree", rp_tree_query_fn(query_method, tree)
         else:
             raise ValueError(f"Unknown algorithm: {query_method}")
