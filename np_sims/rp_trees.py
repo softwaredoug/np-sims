@@ -123,7 +123,7 @@ def fit(vectors: np.ndarray, depth: int = 10):
         return root, None, None
 
 
-def rp_hash(tree, vectors, hashes=None, depth=0):
+def rp_hash(tree, vectors, hashes=None, depth=63):
     """Walk a vector down a tree to get a hash."""
     if tree is None or depth < 0:
         return hashes
@@ -150,6 +150,17 @@ def rp_hash(tree, vectors, hashes=None, depth=0):
     hashes[rhs_idx] |= (1 << depth) | (rp_hash(right, rhs_vectors, rhs_hashes, depth - 1))
 
     return hashes
+
+
+def hash_table(hashes):
+    """Sort hashes, produce an array of the sorts with the actual values."""
+    sorted_idxs = np.argsort(hashes, kind="stable")
+    sorted_hashes = hashes[sorted_idxs]
+    return sorted_idxs, sorted_hashes
+
+
+def binary_search(sorted_hashes: np.ndarray[np.uint64], query_hashed: np.ndarray):
+    return np.searchsorted(sorted_hashes, query_hashed)
 
 
 def depth(tree):
