@@ -1,4 +1,5 @@
 from typing import Tuple, Optional
+import pickle
 
 import numpy as np
 from np_sims.lsh import random_projection
@@ -104,75 +105,94 @@ def projection_between(vect1: np.ndarray,
     return projection
 
 
+def _fit(vectors: np.ndarray, depth: int = 63):
+    """Build a random projection tree from a set of vectors."""
+    # Pick two random vectors from vectors
+    v1, v2 = vectors[np.random.choice(len(vectors), 2, replace=False)]
+    root = projection_between(v1, v2)
+
+    dotted = np.dot(vectors, root)
+    left = vectors[dotted < 0]
+    right = vectors[dotted >= 0]
+    assert len(left) != 0
+    assert len(right) != 0
+
+    if depth > 1:
+        left = _fit(left, depth - 1) if len(left) > 1 else None
+        right = _fit(right, depth - 1) if len(right) > 1 else None
+
+        return root, left, right
+    else:
+        return root, None, None
+
+
+def _rp_hash(tree: Tuple,
+             vectors: np.ndarray[np.float64],
+             hashes: np.ndarray[np.uint64],
+             depth: int = 63):
+    """Walk a vector down a tree to get a hash."""
+    if tree is None or depth <= 0:
+        return hashes
+
+    root, left, right = tree
+    dotted = np.dot(vectors, root)
+
+    lhs_idx = np.ravel(np.argwhere(dotted < 0))
+    rhs_idx = np.ravel(np.argwhere(dotted >= 0))
+
+    lhs_vectors = vectors[lhs_idx]
+    rhs_vectors = vectors[rhs_idx]
+
+    lhs_hashes = hashes[lhs_idx]
+    rhs_hashes = hashes[rhs_idx]
+
+    hashes[lhs_idx] |= _rp_hash(left, lhs_vectors, lhs_hashes, depth - 1)
+    # Set the 'depth' bit in rhs_idx
+    hashes[rhs_idx] |= (1 << depth) | (_rp_hash(right, rhs_vectors, rhs_hashes, depth - 1))
+
+    return hashes
+
+
+def _hash_table(hashes):
+    """Sort hashes, produce an array of the sorts with the actual values."""
+    sorted_idxs = np.argsort(hashes, kind="stable")
+    sorted_hashes = hashes[sorted_idxs]
+    return sorted_idxs, sorted_hashes
+
+
 class RandomProjectionTree:
     """Pure Python random projection tree implementation."""
 
-    def __init__(self, vectors: np.ndarray, seed: Optional[int] = None):
+    def __init__(self, root, sorted_hashes, sorted_idxs):
+        self.sorted_hashes = sorted_hashes
+        self.sorted_idxs = sorted_idxs
+        self.root = root
+
+    def save(self, path: str):
+        """Save the tree to a file."""
+        with open(path, "wb") as f:
+            pickle.dump(self, f)
+
+    @staticmethod
+    def build(vectors: np.ndarray, seed: Optional[int] = None):
+        """Build a random projection tree from a set of vectors."""
         if seed is not None:
             np.random.seed(seed)
-        self.root = self._fit(vectors)
-        self.hashes = self._rp_hash(self.root, vectors, np.zeros(len(vectors), dtype=np.uint64))
-        self.sorted_idxs, self.sorted_hashes = self._hash_table(self.hashes)
+        root = _fit(vectors)
+        hashes = _rp_hash(root, vectors, np.zeros(len(vectors), dtype=np.uint64))
+        sorted_idxs, sorted_hashes = _hash_table(hashes)
+        return RandomProjectionTree(root, sorted_hashes, sorted_idxs)
 
-    def _fit(self, vectors: np.ndarray, depth: int = 63):
-        """Build a random projection tree from a set of vectors."""
-        # Pick two random vectors from vectors
-        v1, v2 = vectors[np.random.choice(len(vectors), 2, replace=False)]
-        root = projection_between(v1, v2)
-
-        dotted = np.dot(vectors, root)
-        left = vectors[dotted < 0]
-        right = vectors[dotted >= 0]
-        assert len(left) != 0
-        assert len(right) != 0
-
-        if depth > 1:
-            left = self._fit(left, depth - 1) if len(left) > 1 else None
-            right = self._fit(right, depth - 1) if len(right) > 1 else None
-
-            return root, left, right
-        else:
-            return root, None, None
-
-    def _hash_table(self, hashes):
-        """Sort hashes, produce an array of the sorts with the actual values."""
-        sorted_idxs = np.argsort(hashes, kind="stable")
-        sorted_hashes = hashes[sorted_idxs]
-        return sorted_idxs, sorted_hashes
-
-    def _rp_hash(self,
-                 tree: Tuple,
-                 vectors: np.ndarray[np.float64],
-                 hashes: np.ndarray[np.uint64],
-                 depth: int = 63):
-        """Walk a vector down a tree to get a hash."""
-        if tree is None or depth <= 0:
-            return hashes
-
-        root, left, right = tree
-        dotted = np.dot(vectors, root)
-
-        lhs_idx = np.ravel(np.argwhere(dotted < 0))
-        rhs_idx = np.ravel(np.argwhere(dotted >= 0))
-
-        print(f"Depth: {depth}, LHS: {lhs_idx}, RHS: {rhs_idx} -- vectors: {len(vectors)}")
-
-        lhs_vectors = vectors[lhs_idx]
-        rhs_vectors = vectors[rhs_idx]
-
-        lhs_hashes = hashes[lhs_idx]
-        rhs_hashes = hashes[rhs_idx]
-
-        hashes[lhs_idx] |= self._rp_hash(left, lhs_vectors, lhs_hashes, depth - 1)
-        # Set the 'depth' bit in rhs_idx
-        hashes[rhs_idx] |= (1 << depth) | (self._rp_hash(right, rhs_vectors, rhs_hashes, depth - 1))
-
-        return hashes
+    @staticmethod
+    def load(path: str):
+        """Load the tree from a file."""
+        with open(path, "rb") as f:
+            return pickle.load(f)
 
     def hash_of(self, vectors: np.ndarray[np.float64]) -> np.ndarray[np.uint64]:
         """Get the hash of a vector."""
         hashes = np.zeros(dtype=np.uint64, shape=(len(vectors)))
-        return self._rp_hash(self.root, vectors, hashes)
+        return _rp_hash(self.root, vectors, hashes)
 
     def query(self, query: np.ndarray[np.float64]) -> np.ndarray[np.uint64]:
         """Run a query against the tree."""

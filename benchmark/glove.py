@@ -1,4 +1,5 @@
 import numpy as np
+import argparse
 
 from data_dir import read_np, write_np, read_lines, write_lines, lines_of
 from time import perf_counter
@@ -13,7 +14,8 @@ cwd = os.getcwd()
 sys.path.append(cwd)
 
 from np_sims.lsh import index, create_projections  # noqa: E402
-from np_sims.lsh import query_with_hamming_then_slow_argsort, query_pure_python, query_with_hamming_top_n  # noqa: E402
+from np_sims.lsh import query_pure_python, query_with_hamming_top_n  # noqa: E402
+from np_sims.rp_trees import RandomProjectionTree  # noqa: E402
 
 
 def glove(num_to_sample=10000000):
@@ -58,7 +60,53 @@ def most_similar_cos(vectors, query_idx):
     return top_idxs, sims[top_idxs]
 
 
-def benchmark(terms, vectors, projs, hashes, query_fn, debug=False, workers=8, num_queries=1000):
+def lsh_query_fn(query_method, hashes, projs):
+    if query_method == "lsh_pure_python":
+        query_fn = query_pure_python
+    elif query_method == "lsh_pure_c":
+        query_fn = query_with_hamming_top_n
+
+    return lambda query_vector: query_fn(query_vector, hashes, projs)
+
+
+def rp_tree_query_fn(query_method, rp_tree):
+    return lambda query_vector: rp_tree.query(query_vector)
+
+
+def parse_algorithm_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--algorithm",
+                        nargs="+",
+                        type=str,
+                        help="The algorithm (and possible variant) to use this test")
+    parser.add_argument("--num_projections",
+                        nargs="+",
+                        type=int,
+                        help="For LSH, the number of projections to use")
+
+    args = parser.parse_args()
+    return args
+
+
+def get_test_algorithms(cmd_args):
+    for query_method in cmd_args.algorithm:
+        if query_method in ["lsh_pure_python", "lsh_pure_c"]:
+            for projections in cmd_args.num_projections:
+                num_projections = int(projections)
+                print("----------------------")
+                print(f"Running with {num_projections} projections")
+
+                hashes, projs = load_or_build_index(vectors, num_projections)
+                name = f"{query_method}_{num_projections}"
+                yield name, lsh_query_fn(query_method, hashes, projs)
+        elif query_method == "rp_tree":
+            tree = RandomProjectionTree(vectors)
+            yield "rp_tree", rp_tree_query_fn(query_method, tree)
+        else:
+            raise ValueError(f"Unknown algorithm: {query_method}")
+
+
+def benchmark(terms, vectors, query_fn, debug=False, workers=8, num_queries=1000):
 
     # Randomly select N terms
     query_idxs = np.random.randint(0, len(terms), size=num_queries)
@@ -76,7 +124,7 @@ def benchmark(terms, vectors, projs, hashes, query_fn, debug=False, workers=8, n
 
     def query(query_idx):
         my_start = perf_counter()
-        result, sims = query_fn(vectors[query_idx], hashes, projs)
+        result, sims = query_fn(vectors[query_idx])
         return query_idx, result, sims, perf_counter() - my_start
 
     with cProfile.Profile() as pr:
@@ -164,30 +212,20 @@ def load_or_build_index(vectors, num_projections=640):
 
 if __name__ == "__main__":
     terms, vectors = glove()
-    query_method = "pure_python" if len(sys.argv) < 2 else sys.argv[1]
-
-    if query_method == "pure_python":
-        query_fn = query_pure_python
-    elif query_method == "pure_c":
-        query_fn = query_with_hamming_top_n
-    elif query_method == "hamming_c":
-        query_fn = query_with_hamming_then_slow_argsort
+    cmd_args = parse_algorithm_args()
 
     results = []
-    for projections in sys.argv[2:]:
-        num_projections = int(projections)
-        print("----------------------")
-        print(f"Running with {num_projections} projections")
+    for name, query_fn in get_test_algorithms(cmd_args):
+        print(f"Running {name}")
+        results.append((name, benchmark(terms, vectors, query_fn)))
 
-        hashes, projs = load_or_build_index(vectors, num_projections)
-        print("Done indexing")
-
-        results.append((num_projections, benchmark(terms, vectors, projs, hashes, query_fn)))
-
-    for num_projections, result in results:
+    for name, result in results:
         qps, recall = result
-        print(f"{num_projections} projections -- QPS {qps} -- Recall {recall}")
+        print(f"Algo: {name} -- QPS {qps} -- Recall {recall}")
 
+
+# LSH Benchmarks
+# Doug's m1
 
 # --------------------------------
 # Pure Python
