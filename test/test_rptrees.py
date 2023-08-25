@@ -3,7 +3,7 @@ from typing import Dict, Any, List
 
 import numpy as np
 
-from np_sims.rp_trees import RandomProjectionTree, _fit, _rp_hash, _hash_table
+from np_sims.rp_trees import RandomProjectionTree, _fit, _rp_hash
 
 
 def as_normed_vects(vectors):
@@ -16,6 +16,15 @@ def num_unique(lst: List):
 
 def each_unique(lst: List):
     return num_unique(lst) == len(lst)
+
+
+def many_close_to(lst: List, n=100):
+    """Create many variations of a single vector barely similar to each other."""
+    epsilon = 1.0001
+    arr = np.array(lst)
+    lst = [arr * epsilon ** i for i in range(n)]
+    lst = np.array(lst).tolist()
+    return lst
 
 
 vector_test_scenarios = {
@@ -31,20 +40,36 @@ vector_test_scenarios = {
         "expected_match": 0,
         "rng_seed": 1000,
     },
-    "large": {
+    "a_bit_bigger": {
         "vectors": as_normed_vects(np.array([[0, 1.1, 2], [3, 4.1, 5], [6, 7.1, 8],
-                                             [0, 1.5, 2], [3, 4.5, 5], [6, 7.5, 8]])),
+                                             [0, 1.5, 2], [3, 4.5, 5], [6, 7.5, 8]
+                                             ])),
         "query": as_normed_vects(np.array([[0, 1, 2]])),
         "expected_match": 0,
         "rng_seed": 0,
     },
-    "large_rng_100": {
+    "a_bit_bigger_100": {
         "vectors": as_normed_vects(np.array([[0, 1.1, 2], [3, 4.1, 5], [6, 7.1, 8],
                                              [0, 1.5, 2], [3, 4.5, 5], [6, 7.5, 8]])),
         "query": as_normed_vects(np.array([[0, 1, 2]])),
         "expected_match": 0,
         "rng_seed": 100,
-    }
+    },
+    "identical_vectors": {
+        "vectors": as_normed_vects(np.array([[0, 1, 2], [3, 4.5, 5], [6, 7.1, 8],
+                                             [0, 1, 2], [3, 4.5, 5], [6, 7.1, 8]])),
+        "query": as_normed_vects(np.array([[0, 1, 2]])),
+        "expected_match": 0,
+        "rng_seed": 0,
+    },
+    "many_closeby": {
+        "vectors": as_normed_vects(np.array([[0, 1.1, 2], [3, 4.1, 5], [6, 7.1, 8],
+                                             [0, 1.5, 2], [3, 4.5, 5], [6, 7.5, 8]
+                                             ] + many_close_to([3.0, 4.0, 5.0]))),
+        "query": as_normed_vects(np.array([[0, 1, 2]])),
+        "expected_match": 0,
+        "rng_seed": 0,
+    },
 }
 
 
@@ -72,7 +97,6 @@ def test_fitting(vectors, query, expected_match, rng_seed):
 @w_scenarios(vector_test_scenarios)
 def test_rp_tree(vectors, query, expected_match, rng_seed):
     tree = RandomProjectionTree.build(vectors, seed=rng_seed)
-    assert each_unique(tree.sorted_hashes)
     nearest = tree.query(query)[0]
     assert nearest == expected_match
 

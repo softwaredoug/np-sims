@@ -72,8 +72,8 @@ def projection_between(vect1: np.ndarray,
                        vect2: np.ndarray,
                        dim=0):
     """Get a vector that gives opposite signed dot products for vect1/vect2."""
-    if (vect1 == vect2).all():
-        raise ValueError("Vectors cannot be identical")
+    if np.isclose(vect1, vect2):
+        raise ValueError("Vectors cannot be near identical")
     dims = len(vect1)
 
     while vect1[dim] == 0.0 or vect2[dim] == 0.0:
@@ -92,6 +92,7 @@ def projection_between(vect1: np.ndarray,
 
         floor = -dot1 / vect1[dim]
         ceiling = -dot2 / vect2[dim]
+        print(dim, floor, ceiling)
         projection[dim] = (floor + ceiling) / 2.0
 
     # Sign is different we just set to -1 or 1 which is basically
@@ -109,7 +110,16 @@ def _fit(vectors: np.ndarray, depth: int = 63):
     """Build a random projection tree from a set of vectors."""
     # Pick two random vectors from vectors
     v1, v2 = vectors[np.random.choice(len(vectors), 2, replace=False)]
-    root = projection_between(v1, v2)
+    root = None
+    try_count = 0
+    while root is None:
+        try:
+            v1, v2 = vectors[np.random.choice(len(vectors), 2, replace=False)]
+            root = projection_between(v1, v2)
+        except ValueError:
+            try_count += 1
+            if try_count > 5:
+                return None
 
     dotted = np.dot(vectors, root)
     left = vectors[dotted < 0]
