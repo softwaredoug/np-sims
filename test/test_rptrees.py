@@ -3,7 +3,7 @@ from typing import Dict, Any, List
 
 import numpy as np
 
-from np_sims.rp_trees import RandomProjectionTree
+from np_sims.rp_trees import RandomProjectionTree, _fit, _rp_hash, _hash_table
 
 
 def as_normed_vects(vectors):
@@ -57,7 +57,20 @@ def w_scenarios(scenarios: Dict[str, Dict[str, Any]]):
 
 
 @w_scenarios(vector_test_scenarios)
-def test_tree_building(vectors, query, expected_match, rng_seed):
+def test_fitting(vectors, query, expected_match, rng_seed):
+    """Test internals of rp tree."""
+    np.random.seed(rng_seed)
+    for depth in range(0, 10):
+        tree = _fit(vectors, depth=depth)
+        dims = vectors.shape[1]
+        vectors_hashed = np.zeros(vectors.shape, dtype=np.uint32)
+        vectors_hashed = _rp_hash(tree, vectors, vectors_hashed, depth=depth)
+        query_hash = np.zeros((1, dims), dtype=np.uint32)
+        query_hash = _rp_hash(tree, query, query_hash, depth=depth)
+
+
+@w_scenarios(vector_test_scenarios)
+def test_rp_tree(vectors, query, expected_match, rng_seed):
     tree = RandomProjectionTree.build(vectors, seed=rng_seed)
     assert each_unique(tree.sorted_hashes)
     nearest = tree.query(query)[0]
