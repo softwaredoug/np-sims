@@ -3,7 +3,7 @@ from typing import Dict, Any, List
 
 import numpy as np
 
-from np_sims.rp_trees import fit, rp_hash, binary_search, hash_table
+from np_sims.rp_trees import RandomProjectionTree
 
 
 def as_normed_vects(vectors):
@@ -22,13 +22,21 @@ vector_test_scenarios = {
     "base": {
         "vectors": as_normed_vects(np.array([[0, 1, 2], [3, 4, 5], [6, 7, 8]])),
         "query": as_normed_vects(np.array([[0, 1, 2]])),
-        "expected_match": 0
+        "expected_match": 0,
+        "rng_seed": 0,
+    },
+    "base_rng_1000": {
+        "vectors": as_normed_vects(np.array([[0, 1, 2], [3, 4, 5], [6, 7, 8]])),
+        "query": as_normed_vects(np.array([[0, 1, 2]])),
+        "expected_match": 0,
+        "rng_seed": 1000,
     },
     "large": {
         "vectors": as_normed_vects(np.array([[0, 1.1, 2], [3, 4.1, 5], [6, 7.1, 8],
                                              [0, 1.5, 2], [3, 4.5, 5], [6, 7.5, 8]])),
         "query": as_normed_vects(np.array([[0, 1, 2]])),
-        "expected_match": 0
+        "expected_match": 0,
+        "rng_seed": 0,
     }
 }
 
@@ -42,13 +50,11 @@ def w_scenarios(scenarios: Dict[str, Dict[str, Any]]):
 
 
 @w_scenarios(vector_test_scenarios)
-def test_tree_building(vectors, query, expected_match):
-    tree = fit(vectors)
-    vectors_hashed = rp_hash(tree, vectors)
-    query_hashed = rp_hash(tree, query)
-    assert each_unique(vectors_hashed)
-    assert (vectors_hashed[expected_match] == query_hashed).all()
+def test_tree_building(vectors, query, expected_match, rng_seed):
+    tree = RandomProjectionTree(vectors, seed=rng_seed)
+    query_hashed = tree.hash_of(query)
+    assert each_unique(tree.hashes)
+    assert (tree.hashes[expected_match] == query_hashed).all()
 
-    ids, sorted_hashed = hash_table(vectors_hashed)
-    nearest = binary_search(vectors_hashed, query_hashed)[0]
+    nearest = tree.query(query)[0]
     assert nearest == expected_match

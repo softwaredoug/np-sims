@@ -1,3 +1,5 @@
+from typing import Tuple, Optional
+
 import numpy as np
 from np_sims.lsh import random_projection
 
@@ -102,70 +104,88 @@ def projection_between(vect1: np.ndarray,
     return projection
 
 
-def fit(vectors: np.ndarray, depth: int = 10):
-    """Build a random projection tree from a set of vectors."""
-    # Pick two random vectors from vectors
-    v1, v2 = vectors[np.random.choice(len(vectors), 2, replace=False)]
-    root = projection_between(v1, v2)
+class RandomProjectionTree:
+    """Pure Python random projection tree implementation."""
 
-    dotted = np.dot(vectors, root)
-    left = vectors[dotted < 0]
-    right = vectors[dotted >= 0]
-    assert len(left) != 0
-    assert len(right) != 0
+    def __init__(self, vectors: np.ndarray, seed: Optional[int] = None):
+        if seed is not None:
+            np.random.seed(seed)
+        self.root = self._fit(vectors)
+        self.hashes = self._rp_hash(self.root, vectors, np.zeros(len(vectors), dtype=np.uint64))
+        self.sorted_idxs, self.sorted_hashes = self._hash_table(self.hashes)
 
-    if depth > 1:
-        left = fit(left, depth - 1) if len(left) > 1 else None
-        right = fit(right, depth - 1) if len(right) > 1 else None
+    def _fit(self, vectors: np.ndarray, depth: int = 63):
+        """Build a random projection tree from a set of vectors."""
+        # Pick two random vectors from vectors
+        v1, v2 = vectors[np.random.choice(len(vectors), 2, replace=False)]
+        root = projection_between(v1, v2)
 
-        return root, left, right
-    else:
-        return root, None, None
+        dotted = np.dot(vectors, root)
+        left = vectors[dotted < 0]
+        right = vectors[dotted >= 0]
+        assert len(left) != 0
+        assert len(right) != 0
 
+        if depth > 1:
+            left = self._fit(left, depth - 1) if len(left) > 1 else None
+            right = self._fit(right, depth - 1) if len(right) > 1 else None
 
-def rp_hash(tree, vectors, hashes=None, depth=63):
-    """Walk a vector down a tree to get a hash."""
-    if tree is None or depth < 0:
+            return root, left, right
+        else:
+            return root, None, None
+
+    def _hash_table(self, hashes):
+        """Sort hashes, produce an array of the sorts with the actual values."""
+        sorted_idxs = np.argsort(hashes, kind="stable")
+        sorted_hashes = hashes[sorted_idxs]
+        return sorted_idxs, sorted_hashes
+
+    def _rp_hash(self,
+                 tree: Tuple,
+                 vectors: np.ndarray[np.float64],
+                 hashes: np.ndarray[np.uint64],
+                 depth: int = 63):
+        """Walk a vector down a tree to get a hash."""
+        if tree is None or depth <= 0:
+            return hashes
+
+        root, left, right = tree
+        dotted = np.dot(vectors, root)
+
+        lhs_idx = np.ravel(np.argwhere(dotted < 0))
+        rhs_idx = np.ravel(np.argwhere(dotted >= 0))
+
+        print(f"Depth: {depth}, LHS: {lhs_idx}, RHS: {rhs_idx} -- vectors: {len(vectors)}")
+
+        lhs_vectors = vectors[lhs_idx]
+        rhs_vectors = vectors[rhs_idx]
+
+        lhs_hashes = hashes[lhs_idx]
+        rhs_hashes = hashes[rhs_idx]
+
+        hashes[lhs_idx] |= self._rp_hash(left, lhs_vectors, lhs_hashes, depth - 1)
+        # Set the 'depth' bit in rhs_idx
+        hashes[rhs_idx] |= (1 << depth) | (self._rp_hash(right, rhs_vectors, rhs_hashes, depth - 1))
+
         return hashes
 
-    if hashes is None:
+    def hash_of(self, vectors: np.ndarray[np.float64]) -> np.ndarray[np.uint64]:
+        """Get the hash of a vector."""
         hashes = np.zeros(dtype=np.uint64, shape=(len(vectors)))
+        return self._rp_hash(self.root, vectors, hashes)
 
-    root, left, right = tree
-    dotted = np.dot(vectors, root)
+    def query(self, query: np.ndarray[np.float64]) -> np.ndarray[np.uint64]:
+        """Run a query against the tree."""
+        most_similar = np.searchsorted(self.sorted_hashes, self.hash_of(query))
+        return self.sorted_idxs[most_similar]
 
-    lhs_idx = np.ravel(np.argwhere(dotted < 0))
-    rhs_idx = np.ravel(np.argwhere(dotted >= 0))
+    def _depth(self, tree):
+        """Get the depth of a tree."""
+        if tree is None:
+            return 0
+        else:
+            return 1 + max(self._depth(tree[1]), self._depth(tree[2]))
 
-    print(f"Depth: {depth}, LHS: {lhs_idx}, RHS: {rhs_idx} -- vectors: {len(vectors)}")
-
-    lhs_vectors = vectors[lhs_idx]
-    rhs_vectors = vectors[rhs_idx]
-
-    lhs_hashes = hashes[lhs_idx]
-    rhs_hashes = hashes[rhs_idx]
-
-    hashes[lhs_idx] |= rp_hash(left, lhs_vectors, lhs_hashes, depth - 1)
-    # Set the 'depth' bit in rhs_idx
-    hashes[rhs_idx] |= (1 << depth) | (rp_hash(right, rhs_vectors, rhs_hashes, depth - 1))
-
-    return hashes
-
-
-def hash_table(hashes):
-    """Sort hashes, produce an array of the sorts with the actual values."""
-    sorted_idxs = np.argsort(hashes, kind="stable")
-    sorted_hashes = hashes[sorted_idxs]
-    return sorted_idxs, sorted_hashes
-
-
-def binary_search(sorted_hashes: np.ndarray[np.uint64], query_hashed: np.ndarray):
-    return np.searchsorted(sorted_hashes, query_hashed)
-
-
-def depth(tree):
-    """Get the depth of a tree."""
-    if tree is None:
-        return 0
-    else:
-        return 1 + max(depth(tree[1]), depth(tree[2]))
+    def depth(self):
+        """Get the depth of the tree."""
+        return self._depth(self.root)
