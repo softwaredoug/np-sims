@@ -83,6 +83,14 @@ def parse_algorithm_args():
                         nargs="+",
                         type=int,
                         help="For LSH, the number of projections to use")
+    parser.add_argument("--workers",
+                        nargs=1,
+                        default=1,
+                        type=int,
+                        help="Number of workers")
+    parser.add_argument("--verbose",
+                        action="store_true",
+                        help="Enable verbose debug output")
 
     args = parser.parse_args()
     return args
@@ -112,7 +120,7 @@ def get_test_algorithms(cmd_args):
             raise ValueError(f"Unknown algorithm: {query_method}")
 
 
-def benchmark(terms, vectors, query_fn, debug=False, workers=8, num_queries=1000):
+def benchmark(terms, vectors, query_fn, workers, debug=False, num_queries=10):
 
     # Randomly select N terms
     query_idxs = np.random.randint(0, len(terms), size=num_queries)
@@ -223,7 +231,8 @@ if __name__ == "__main__":
     results = []
     for name, query_fn in get_test_algorithms(cmd_args):
         print(f"Running {name}")
-        results.append((name, benchmark(terms, vectors, query_fn)))
+        results.append((name, benchmark(terms, vectors, query_fn,
+                        workers=cmd_args.workers[0], debug=cmd_args.verbose)))
 
     for name, result in results:
         qps, recall = result

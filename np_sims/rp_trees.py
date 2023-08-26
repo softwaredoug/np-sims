@@ -109,13 +109,19 @@ def _fit(vectors: np.ndarray, depth: int = 63):
     """Build a random projection tree from a set of vectors."""
     # Pick two random vectors from vectors
     root = None
+    try_count = 0
 
     for idx in range(len(vectors / 2)):
         try:
             v1, v2 = vectors[idx], vectors[-(idx + 1)]
             root = projection_between(v1, v2)
+            if root is not None:
+                break
         except ValueError:
-            continue
+            try_count += 1
+            if try_count > 100:
+                print(f"Giving up at depth {depth}")
+                break
 
     if root is None:
         return None
@@ -187,8 +193,11 @@ class RandomProjectionTree:
         """Build a random projection tree from a set of vectors."""
         if seed is not None:
             np.random.seed(seed)
+        print("fitting")
         root = _fit(vectors)
+        print("hashing each vector")
         hashes = _rp_hash(root, vectors, np.zeros(len(vectors), dtype=np.uint64))
+        print("Sorting to build searchable hash table")
         sorted_idxs, sorted_hashes = _hash_table(hashes)
         return RandomProjectionTree(root, sorted_hashes, sorted_idxs)
 
@@ -201,12 +210,14 @@ class RandomProjectionTree:
     def hash_of(self, vectors: np.ndarray[np.float64]) -> np.ndarray[np.uint64]:
         """Get the hash of a vector."""
         hashes = np.zeros(dtype=np.uint64, shape=(len(vectors)))
+        if len(vectors.shape) == 1:
+            vectors = np.array([vectors])
         return _rp_hash(self.root, vectors, hashes)
 
     def query(self, query: np.ndarray[np.float64]) -> np.ndarray[np.uint64]:
         """Run a query against the tree."""
         most_similar = np.searchsorted(self.sorted_hashes, self.hash_of(query))
-        return self.sorted_idxs[most_similar]
+        return self.sorted_idxs[most_similar], None
 
     def _depth(self, tree):
         """Get the depth of a tree."""

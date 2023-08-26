@@ -109,3 +109,19 @@ def test_rp_tree(vectors, query, rng_seed):
     assert (tree2.sorted_idxs == tree.sorted_idxs).all()
     nearest2 = tree2.query(query)[0]
     assert nearest2 == nearest_neighbor
+
+
+def test_with_flat_query_vector():
+    vectors = as_normed_vects(np.array([[0, 1, 2], [3, 4, 5], [6, 7, 8]]))
+    query = as_normed_vects(np.array([[0, 1, 2]]))
+    query_flattened = query[0]
+
+    nearest_neighbor = np.dot(vectors, query_flattened)
+    nearest_neighbor = np.argmax(nearest_neighbor)
+
+    tree = RandomProjectionTree.build(vectors, seed=0)
+    nearest = tree.query(query_flattened)[0]
+    nearest_unflattened = tree.query(query)[0]
+
+    assert nearest == nearest_neighbor
+    assert nearest_unflattened == nearest_neighbor
