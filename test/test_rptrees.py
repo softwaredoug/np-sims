@@ -120,8 +120,9 @@ def test_with_flat_query_vector():
     nearest_neighbor = np.argmax(nearest_neighbor)
 
     tree = RandomProjectionTree.build(vectors, seed=0)
-    nearest = tree.query(query_flattened)[0]
+    nearest_flattened = tree.query(query_flattened)[0]
     nearest_unflattened = tree.query(query)[0]
 
-    assert nearest == nearest_neighbor
+    assert nearest_flattened.shape == nearest_unflattened.shape
+    assert nearest_flattened == nearest_neighbor
     assert nearest_unflattened == nearest_neighbor

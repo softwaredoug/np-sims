@@ -209,9 +209,9 @@ class RandomProjectionTree:
 
     def hash_of(self, vectors: np.ndarray[np.float64]) -> np.ndarray[np.uint64]:
         """Get the hash of a vector."""
-        hashes = np.zeros(dtype=np.uint64, shape=(len(vectors)))
         if len(vectors.shape) == 1:
             vectors = np.array([vectors])
+        hashes = np.zeros(dtype=np.uint64, shape=(len(vectors)))
         return _rp_hash(self.root, vectors, hashes)
 
     def query(self, query: np.ndarray[np.float64]) -> np.ndarray[np.uint64]:
@@ -229,3 +229,21 @@ class RandomProjectionTree:
     def depth(self):
         """Get the depth of the tree."""
         return self._depth(self.root)
+
+    def debug_dump(self, terms, vectors, term_id):
+        """Dump a debug representation of the tree."""
+        idx = np.argwhere(self.sorted_idxs == term_id)[0][0]
+        num_to_dump = 10
+
+        queen = np.array([vectors[7613]])
+
+        hashes_to_dump = self.sorted_hashes[idx - (num_to_dump // 2):idx + (num_to_dump // 2)]
+        idxs_to_dump = self.sorted_idxs[idx - (num_to_dump // 2):idx + (num_to_dump // 2)]
+
+        last_vector = None
+        for (idx, bit_hash) in zip(idxs_to_dump, hashes_to_dump):
+            dotted = np.dot(vectors[idx], last_vector) if last_vector is not None else 0
+            term = terms[idx].replace("\n", "")
+            print(f"{bit_hash:064b} {idx}:{term} -- gt:{dotted}")
+            last_vector = vectors[idx]
+        import pdb; pdb.set_trace()

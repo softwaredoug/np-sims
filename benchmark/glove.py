@@ -110,6 +110,10 @@ def get_test_algorithms(cmd_args):
         elif query_method == "rp_tree":
             try:
                 tree = RandomProjectionTree.load('data/rp_tree.pkl')
+                # Check what's nearby king
+                term_idx = terms.index("king\n")
+                tree.debug_dump(terms, vectors, term_idx)
+                import pdb; pdb.set_trace()
             except FileNotFoundError:
                 start = perf_counter()
                 tree = RandomProjectionTree.build(vectors)
