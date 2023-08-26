@@ -118,7 +118,10 @@ def get_test_algorithms(cmd_args):
                 start = perf_counter()
                 tree = RandomProjectionTree.build(vectors)
                 print(f"Building tree took {perf_counter() - start} seconds")
-                tree.save('data/rp_tree.pkl')
+                # tree.save('data/rp_tree.pkl')
+                term_idx = terms.index("king\n")
+                tree.debug_dump(terms, vectors, term_idx)
+                import pdb; pdb.set_trace()
             yield "rp_tree", rp_tree_query_fn(query_method, tree)
         else:
             raise ValueError(f"Unknown algorithm: {query_method}")

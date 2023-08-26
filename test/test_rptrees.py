@@ -1,30 +1,8 @@
-import pytest
-from typing import Dict, Any, List
-
 import numpy as np
 
 from np_sims.rp_trees import RandomProjectionTree, _fit, _rp_hash
 
-
-def as_normed_vects(vectors):
-    return vectors / np.linalg.norm(vectors, axis=1)[:, None]
-
-
-def num_unique(lst: List):
-    return len(set(lst))
-
-
-def each_unique(lst: List):
-    return num_unique(lst) == len(lst)
-
-
-def many_close_to(lst: List, n=100):
-    """Create many variations of a single vector barely similar to each other."""
-    epsilon = 1.0001
-    arr = np.array(lst)
-    lst = [arr * epsilon ** i for i in range(n)]
-    lst = np.array(lst).tolist()
-    return lst
+from test_utils import as_normed_vects, many_close_to, w_scenarios
 
 
 vector_test_scenarios = {
@@ -65,14 +43,6 @@ vector_test_scenarios = {
         "rng_seed": 0,
     },
 }
-
-
-def w_scenarios(scenarios: Dict[str, Dict[str, Any]]):
-    return pytest.mark.parametrize(
-        [key for key in scenarios.values()][0].keys(),
-        [tuple(scenario.values()) for scenario in scenarios.values()],
-        ids=list(scenarios.keys())
-    )
 
 
 @w_scenarios(vector_test_scenarios)
