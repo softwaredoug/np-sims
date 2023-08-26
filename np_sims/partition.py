@@ -19,7 +19,7 @@ class SplitRule:
     def __init__(self, vectors: np.ndarray):
         self.vectors = vectors
 
-    def __call__(self, vectors: np.ndarray):
+    def split(self, vectors: np.ndarray):
         raise NotImplementedError
 
 
@@ -29,10 +29,10 @@ class KdTreeSplitRule(SplitRule):
         self.median = median
         self.dim = dim
 
-    def __call__(self, vectors: np.ndarray):
+    def split(self, vectors: np.ndarray):
         """Get a random projection tree for a set of vectors."""
-        left = vectors[vectors[:, self.dim] < self.median]
-        right = vectors[vectors[:, self.dim] >= self.median]
+        left = np.ravel(np.argwhere(vectors[:, self.dim] < self.median))
+        right = np.ravel(np.argwhere(vectors[:, self.dim] >= self.median))
         return left, right
 
 

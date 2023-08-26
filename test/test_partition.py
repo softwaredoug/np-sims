@@ -28,10 +28,12 @@ def test_partition_kdtree(vectors, rng_seed):
     np.random.seed(rng_seed)
 
     splitter = kdtree_chooserule(vectors)
-    left, right = splitter(vectors)
+    left, right = splitter.split(vectors)
     assert len(left) != 0
     assert len(right) != 0
     assert len(left) + len(right) == len(vectors)
+    left_vectors = vectors[left]
+    right_vectors = vectors[right]
 
-    assert (left[:, splitter.dim] < splitter.median).all()
-    assert (right[:, splitter.dim] >= splitter.median).all()
+    assert (left_vectors[:, splitter.dim] < splitter.median).all()
+    assert (right_vectors[:, splitter.dim] >= splitter.median).all()

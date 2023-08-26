@@ -1,10 +1,11 @@
-from typing import Tuple, Optional
+from typing import Optional
 import pickle
 from time import perf_counter
 from math import log2, ceil
 
 import numpy as np
 from np_sims.lsh import random_projection
+from np_sims.partition import kdtree_chooserule
 
 
 DEFAULT_DEPTH = 3
@@ -112,90 +113,27 @@ def projection_between(vect1: np.ndarray,
 
 def _fit(vectors: np.ndarray, depth: int = DEFAULT_DEPTH):
     """Build a random projection tree from a set of vectors."""
-    # Pick two random vectors from vectors
-    root = None
-
+    # TODO sample before calling this function
     # Sample N vectors, get the two with smallest dot product
     # between them
     N = ceil(log2(len(vectors)))
     if N < 1000 and len(vectors) > 1000:
         N = 1000
-    best_v1, best_v2, best_root = None, None, None
-    max_sim = -1
-    best_mean_sim = -100
-    best_score = -100
-    left, right = None, None
-    lhs_mutual_sim, rhs_mutual_sim = None, None
-    lhs_mutual_var, rhs_mutual_var = None, None
 
-    for idx in range(N):
-        v1, v2 = vectors[np.random.choice(len(vectors), 2, replace=False)]
-        sim = np.dot(v1, v2)
-        if sim > max_sim:
-            max_sim = sim
-
-            root = projection_between(v1, v2)
-
-            dotted = np.dot(vectors, root)
-            left = vectors[dotted < 0]
-            right = vectors[dotted >= 0]
-
-            if len(left) <= N:
-                left_sample = left
-            else:
-                left_sample = left[np.random.choice(len(left), N, replace=False)]
-
-            if len(right) <= N:
-                right_sample = right
-            else:
-                right_sample = right[np.random.choice(len(right), N, replace=False)]
-
-            left_right_dotted = np.dot(left_sample, right_sample.T)
-            mean_sim = left_right_dotted.mean()
-
-            lhs_mutual_sim = np.dot(left_sample, left_sample.T).mean()
-            rhs_mutual_sim = np.dot(right_sample, right_sample.T).mean()
-            lhs_mutual_var = np.dot(left_sample, left_sample.T).var()
-            rhs_mutual_var = np.dot(right_sample, right_sample.T).var()
-
-            # Basically we want to maximize the mean similarity
-            # but also minimize the variance of the similarity variance within each group
-            score = mean_sim - max(lhs_mutual_var, rhs_mutual_var)
-
-            if score > best_score:
-                best_v1 = v1
-                best_v2 = v2
-                best_root = root
-                best_mean_sim = mean_sim
-                best_score = score
-                # print(f"new best -- {idx} -- mutual mean: {lhs_mutual_sim}, {rhs_mutual_sim} || mutual var: {lhs_mutual_var}, {rhs_mutual_var} || best_mean:{best_mean_sim} || max_sim:{max_sim} || best_score:{best_score}")
-
-    if best_v1 is None or best_v2 is None:
-        return None
-
-    if len(vectors) > 0:
-        perc_left = len(left) / len(vectors)
-        perc_right = len(right) / len(vectors)
-
-        # Compute min distance between left and right
-        dist_min = -1
-        dist_max = -1
-        if len(vectors) < 100000:
-            dist = np.dot(left, right.T)
-            dist_min = dist.min()
-            dist_max = dist.max()
-        print(f"split -- {depth} -- {len(left)} {len(right)}, {perc_left}, {perc_right} || {dist_min} -- {dist_max} || max_sim:{max_sim} || max_mean_sim:{best_mean_sim}")
+    sample = vectors[np.random.choice(len(vectors), N, replace=False)]
+    splitter = kdtree_chooserule(sample)
+    lhs_idx, rhs_idx = splitter.split(vectors)
 
     if depth > 1:
-        left = _fit(left, depth - 1) if len(left) > 1 else None
-        right = _fit(right, depth - 1) if len(right) > 1 else None
+        left = _fit(vectors[lhs_idx], depth - 1) if len(lhs_idx) > 1 else None
+        right = _fit(vectors[rhs_idx], depth - 1) if len(rhs_idx) > 1 else None
 
-        return best_root, left, right
+        return splitter, left, right
     else:
-        return best_root, None, None
+        return splitter, None, None
 
 
-def _rp_hash(tree: Tuple,
+def _rp_hash(tree,
              vectors: np.ndarray[np.float64],
              hashes: np.ndarray[np.uint64],
              depth: int = DEFAULT_DEPTH):
@@ -204,10 +142,7 @@ def _rp_hash(tree: Tuple,
         return hashes
 
     root, left, right = tree
-    dotted = np.dot(vectors, root)
-
-    lhs_idx = np.ravel(np.argwhere(dotted < 0))
-    rhs_idx = np.ravel(np.argwhere(dotted >= 0))
+    lhs_idx, rhs_idx = root.split(vectors)
 
     lhs_vectors = vectors[lhs_idx]
     rhs_vectors = vectors[rhs_idx]
