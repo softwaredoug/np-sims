@@ -25,6 +25,13 @@ def many_close_to(lst: List, n=100):
     return lst
 
 
+def random_vector(n=3):
+    """Return random unit vector of n dimensions."""
+    vect = np.random.normal(size=n)
+    vect /= np.linalg.norm(vect)
+    return vect
+
+
 def w_scenarios(scenarios: Dict[str, Dict[str, Any]]):
     """Decorate for parametrizing tests that names the scenarios and params."""
     return pytest.mark.parametrize(

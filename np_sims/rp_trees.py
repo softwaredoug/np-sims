@@ -4,10 +4,10 @@ from time import perf_counter
 from math import log2, ceil
 
 import numpy as np
-from np_sims.partition import kdtree_chooserule
+from np_sims.partition import rptree_max_chooserule
 
 
-DEFAULT_DEPTH = 3
+DEFAULT_DEPTH = 15
 
 
 def _fit(vectors: np.ndarray, depth: int = DEFAULT_DEPTH):
@@ -15,12 +15,11 @@ def _fit(vectors: np.ndarray, depth: int = DEFAULT_DEPTH):
     # TODO sample before calling this function
     # Sample N vectors, get the two with smallest dot product
     # between them
-    N = ceil(log2(len(vectors)))
-    if N < 1000 and len(vectors) > 1000:
-        N = 1000
-
-    sample = vectors[np.random.choice(len(vectors), N, replace=False)]
-    splitter = kdtree_chooserule(sample)
+    N = 10000
+    sample = vectors
+    if len(vectors) > N:
+        sample = vectors[np.random.choice(len(vectors), N, replace=False)]
+    splitter = rptree_max_chooserule(sample)
     lhs_idx, rhs_idx = splitter.split(vectors)
 
     if depth > 1:
@@ -128,6 +127,7 @@ class RandomProjectionTree:
 
         queen = np.array([vectors[7613]])
         king = np.array([vectors[3598]])
+        king_nn = np.dot(vectors, king[0]).argsort()[::-1][:10]
 
         hashes_to_dump = self.sorted_hashes[idx - (num_to_dump // 2):idx + (num_to_dump // 2)]
         idxs_to_dump = self.sorted_idxs[idx - (num_to_dump // 2):idx + (num_to_dump // 2)]
@@ -142,4 +142,7 @@ class RandomProjectionTree:
         print("--------------------------------")
         print(f" king: {self.hash_of(king)[0]:064b}")
         print(f"queen: {self.hash_of(queen)[0]:064b}")
+        for nn in king_nn:
+            nn_term = terms[nn].replace("\n", "").rjust(10)
+            print(f"{nn_term}: {self.hash_of(np.array([vectors[nn]]))[0]:064b}")
         import pdb; pdb.set_trace()

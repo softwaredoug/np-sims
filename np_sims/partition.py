@@ -14,6 +14,9 @@ As that idiot Farts McToots says: "It's a tree, but it's made of vectors."
 import numpy as np
 from np_sims.lsh import random_projection
 
+# glove_queen = np.array([vectors[7613]])
+# glove_king = np.array([vectors[3598]])
+
 
 class SplitRule:
 
@@ -37,9 +40,18 @@ class KdTreeSplitRule(SplitRule):
         return left, right
 
 
-def kdtree_chooserule(vectors: np.ndarray) -> SplitRule:
+def kdtree_maxvar_chooserule(vectors: np.ndarray) -> SplitRule:
     """Get a random projection tree for a set of vectors."""
-    rand_dim = np.random.randint(0, vectors.shape[1])
+    # rand_dim = np.random.randint(0, vectors.shape[1])
+    max_var_dim = np.argmax(np.var(vectors, axis=0))
+    median = np.median(vectors[:, max_var_dim])
+    return KdTreeSplitRule(median, max_var_dim)
+
+
+def kdtree_randdim_chooserule(vectors: np.ndarray) -> SplitRule:
+    """Get a random projection tree for a set of vectors."""
+    # rand_dim = np.random.randint(0, vectors.shape[1])
+    rand_dim = np.random.choice(vectors.shape[1])
     median = np.median(vectors[:, rand_dim])
     return KdTreeSplitRule(median, rand_dim)
 
@@ -166,7 +178,48 @@ def projection_between_chooserule(vectors: np.ndarray, max_proximity=0.95) -> Sp
         vect1, vect2 = vectors[np.random.choice(len(vectors), 2, replace=False)]
         tries += 1
         if tries > 10:
-            return kdtree_chooserule(vectors)
+            return kdtree_maxvar_chooserule(vectors)
 
     proj = projection_between(vect1, vect2)
     return ProjectionBetweenSplitRule(proj)
+
+
+class RPTreeMaxSplitRule(SplitRule):
+
+    def __init__(self, delta, projection):
+        self.delta = delta
+        self.projection = projection
+
+    # Here v is a random projection
+    # Rule(x) := x · v ≤ (median({z · v : z ∈ S}) + δ)
+    def split(self, vectors: np.ndarray):
+        """Get a random projection tree for a set of vectors."""
+        dotted = np.dot(vectors, self.projection)
+        median = np.median(np.dot(vectors, self.projection))
+        left = np.ravel(np.argwhere(dotted <= (median + self.delta)))
+        right = np.ravel(np.argwhere(dotted > (median + self.delta)))
+        return left, right
+
+
+# choose a random unit direction v ∈ R
+# pick any x ∈ S; let y ∈ S be the farthest point from it
+# choose δ uniformly at random in [−1, 1] · 6||x − y||/√D
+# Rule(x) := x · v ≤ (median({z · v : z ∈ S}) + δ)
+def rptree_max_chooserule(vectors: np.ndarray) -> SplitRule:
+    projection = random_projection(vectors.shape[1])
+    farthest_dist = 0
+    for try_no in range(10):
+        x = vectors[np.random.choice(len(vectors))]
+        farthest_from_x = vectors[np.dot(vectors, x).argmin()]
+
+        def euclidean_distance(v1, v2):
+            return np.linalg.norm(v1 - v2)
+        dist = euclidean_distance(x, farthest_from_x)
+        if dist > farthest_dist:
+            farthest_dist = dist
+            print(try_no, farthest_dist)
+
+    chosen = np.random.uniform(low=-1, high=1)
+    delta = chosen * (6 * farthest_dist) / np.sqrt(vectors.shape[1])
+
+    return RPTreeMaxSplitRule(delta, projection)
