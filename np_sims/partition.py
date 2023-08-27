@@ -186,18 +186,20 @@ def projection_between_chooserule(vectors: np.ndarray, max_proximity=0.95) -> Sp
 
 class RPTreeMaxSplitRule(SplitRule):
 
-    def __init__(self, delta, projection):
+    def __init__(self, delta, median, projection):
         self.delta = delta
+        self.median = median
         self.projection = projection
 
     # Here v is a random projection
     # Rule(x) := x · v ≤ (median({z · v : z ∈ S}) + δ)
+    # With delta and median at 0, this is just a random projection
     def split(self, vectors: np.ndarray):
         """Get a random projection tree for a set of vectors."""
         dotted = np.dot(vectors, self.projection)
-        median = np.median(np.dot(vectors, self.projection))
-        left = np.ravel(np.argwhere(dotted <= (median + self.delta)))
-        right = np.ravel(np.argwhere(dotted > (median + self.delta)))
+        # median = np.median(np.dot(vectors, self.projection))
+        left = np.ravel(np.argwhere(dotted <= (self.median + self.delta)))
+        right = np.ravel(np.argwhere(dotted > (self.median + self.delta)))
         return left, right
 
 
@@ -207,19 +209,17 @@ class RPTreeMaxSplitRule(SplitRule):
 # Rule(x) := x · v ≤ (median({z · v : z ∈ S}) + δ)
 def rptree_max_chooserule(vectors: np.ndarray) -> SplitRule:
     projection = random_projection(vectors.shape[1])
-    farthest_dist = 0
-    for try_no in range(10):
-        x = vectors[np.random.choice(len(vectors))]
-        farthest_from_x = vectors[np.dot(vectors, x).argmin()]
+    x = vectors[np.random.choice(len(vectors))]
+    farthest_from_x = vectors[np.dot(vectors, x).argmin()]
 
-        def euclidean_distance(v1, v2):
-            return np.linalg.norm(v1 - v2)
-        dist = euclidean_distance(x, farthest_from_x)
-        if dist > farthest_dist:
-            farthest_dist = dist
-            print(try_no, farthest_dist)
+    def euclidean_distance(v1, v2):
+        return np.linalg.norm(v1 - v2)
+    dist = euclidean_distance(x, farthest_from_x)
 
-    chosen = np.random.uniform(low=-1, high=1)
-    delta = chosen * (6 * farthest_dist) / np.sqrt(vectors.shape[1])
+    chosen = np.random.uniform(low=-1.0, high=1.0)
+    delta = chosen * (6 * dist) / np.sqrt(vectors.shape[1])
 
-    return RPTreeMaxSplitRule(delta, projection)
+    # Median of this will tend t obe 0, no?
+    median = np.median(np.dot(vectors, projection))
+
+    return RPTreeMaxSplitRule(delta, median, projection)

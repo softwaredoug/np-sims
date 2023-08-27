@@ -6,6 +6,10 @@ from np_sims.partition import kdtree_maxvar_chooserule, kdtree_randdim_chooserul
 from np_sims.partition import rptree_max_chooserule
 from np_sims.partition import KdTreeSplitRule, ProjectionBetweenSplitRule
 
+# Larger dimensional test cases, fixture created with nearest and farthest neighbors of
+# king
+# vectors[np.random.choice(vectors.shape[0], 1000)] + vectors[king_nn] + vectors[king_fn]
+# vectors[[ l for l in set(np.random.choice(vectors.shape[0], 1000).tolist() + king_fn.tolist() + king_nn.tolist())]]
 
 vector_test_scenarios = {
     "base": {
@@ -25,6 +29,10 @@ vector_test_scenarios = {
     "all_close": {
         "vectors": as_normed_vects(many_close_to([3.0, 4.0, 5.0])),
         "rng_seed": 1289519
+    },
+    "glove_sample": {
+        "vectors": np.load("test/glove_sample.npy"),
+        "rng_seed": 100
     }
 }
 
@@ -84,3 +92,15 @@ def test_partition_rptree_max(vectors, rng_seed):
     assert len(left) + len(right) == len(vectors)
     left_vectors = vectors[left]
     right_vectors = vectors[right]
+
+    assert len(left) > 0
+    assert len(right) > 0
+
+    # Avg similarity of left and right should be higher
+    # than similarity of left and right to each other
+    left_avg_sim = np.mean(np.dot(left_vectors, left_vectors.T))
+    right_avg_sim = np.mean(np.dot(right_vectors, right_vectors.T))
+    all_avg_sim = np.mean(np.dot(vectors, vectors.T))
+
+    assert left_avg_sim > all_avg_sim
+    assert right_avg_sim > all_avg_sim

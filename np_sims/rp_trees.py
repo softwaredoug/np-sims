@@ -7,7 +7,7 @@ import numpy as np
 from np_sims.partition import rptree_max_chooserule
 
 
-DEFAULT_DEPTH = 15
+DEFAULT_DEPTH = 5
 
 
 def _fit(vectors: np.ndarray, depth: int = DEFAULT_DEPTH):
@@ -15,7 +15,7 @@ def _fit(vectors: np.ndarray, depth: int = DEFAULT_DEPTH):
     # TODO sample before calling this function
     # Sample N vectors, get the two with smallest dot product
     # between them
-    N = 10000
+    N = 100000
     sample = vectors
     if len(vectors) > N:
         sample = vectors[np.random.choice(len(vectors), N, replace=False)]
@@ -125,9 +125,9 @@ class RandomProjectionTree:
         idx = np.argwhere(self.sorted_idxs == term_id)[0][0]
         num_to_dump = 10
 
-        queen = np.array([vectors[7613]])
         king = np.array([vectors[3598]])
         king_nn = np.dot(vectors, king[0]).argsort()[::-1][:10]
+        king_fn = np.dot(vectors, king[0]).argsort()[:10]
 
         hashes_to_dump = self.sorted_hashes[idx - (num_to_dump // 2):idx + (num_to_dump // 2)]
         idxs_to_dump = self.sorted_idxs[idx - (num_to_dump // 2):idx + (num_to_dump // 2)]
@@ -140,9 +140,18 @@ class RandomProjectionTree:
             last_vector = vectors[idx]
 
         print("--------------------------------")
-        print(f" king: {self.hash_of(king)[0]:064b}")
-        print(f"queen: {self.hash_of(queen)[0]:064b}")
+        # print(f" king: {self.hash_of(king)[0]:064b}")
+        # print(f"queen: {self.hash_of(queen)[0]:064b}")
         for nn in king_nn:
-            nn_term = terms[nn].replace("\n", "").rjust(10)
-            print(f"{nn_term}: {self.hash_of(np.array([vectors[nn]]))[0]:064b}")
+            nn_term = terms[nn].replace("\n", "").rjust(17)
+            hash_str = self.hash_of(np.array([vectors[nn]]))[0]
+            hash_str = f"{hash_str:064b}"
+            print(f"{nn_term}: {hash_str[-DEFAULT_DEPTH:]}")
+
+        print("--------------------------------")
+        for fn in king_fn:
+            fn_term = terms[fn].replace("\n", "").rjust(17)
+            hash_str = self.hash_of(np.array([vectors[fn]]))[0]
+            hash_str = f"{hash_str:064b}"
+            print(f"{fn_term}: {hash_str[-DEFAULT_DEPTH:]}")
         import pdb; pdb.set_trace()
