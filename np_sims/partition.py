@@ -208,7 +208,14 @@ class RPTreeMaxSplitRule(SplitRule):
 # choose δ uniformly at random in [−1, 1] · 6||x − y||/√D
 # Rule(x) := x · v ≤ (median({z · v : z ∈ S}) + δ)
 def rptree_max_chooserule(vectors: np.ndarray) -> SplitRule:
+
+    # Just go with projection between for very small sets
+    # which we probably shouldn't be using anyway
+    if len(vectors) < 20:
+        return projection_between_chooserule(vectors)
+
     projection = random_projection(vectors.shape[1])
+
     x = vectors[np.random.choice(len(vectors))]
     farthest_from_x = vectors[np.dot(vectors, x).argmin()]
 
@@ -216,10 +223,16 @@ def rptree_max_chooserule(vectors: np.ndarray) -> SplitRule:
         return np.linalg.norm(v1 - v2)
     dist = euclidean_distance(x, farthest_from_x)
 
-    chosen = np.random.uniform(low=-1.0, high=1.0)
+    chosen = np.random.uniform(low=-0.1, high=0.1)
     delta = chosen * (6 * dist) / np.sqrt(vectors.shape[1])
 
     # Median of this will tend t obe 0, no?
+    dotted = np.dot(vectors, projection)
+    min_dot = np.min(dotted)
+    max_dot = np.max(dotted)
     median = np.median(np.dot(vectors, projection))
 
-    return RPTreeMaxSplitRule(delta, median, projection)
+    if (median + delta) > min_dot and (median + delta) < max_dot:
+        return RPTreeMaxSplitRule(delta, median, projection)
+    else:
+        return RPTreeMaxSplitRule(0, 0, projection)
