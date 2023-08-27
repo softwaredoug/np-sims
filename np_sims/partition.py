@@ -186,10 +186,11 @@ def projection_between_chooserule(vectors: np.ndarray, max_proximity=0.95) -> Sp
 
 class RPTreeMaxSplitRule(SplitRule):
 
-    def __init__(self, delta, median, projection):
+    def __init__(self, projection, median=0.0, delta=0.0):
         self.delta = delta
         self.median = median
         self.projection = projection
+        self.split_point = self.median + self.delta
 
     # Here v is a random projection
     # Rule(x) := x · v ≤ (median({z · v : z ∈ S}) + δ)
@@ -198,24 +199,17 @@ class RPTreeMaxSplitRule(SplitRule):
         """Get a random projection tree for a set of vectors."""
         dotted = np.dot(vectors, self.projection)
         # median = np.median(np.dot(vectors, self.projection))
-        left = np.ravel(np.argwhere(dotted <= (self.median + self.delta)))
-        right = np.ravel(np.argwhere(dotted > (self.median + self.delta)))
+        left = np.ravel(np.argwhere(dotted <= self.split_point))
+        right = np.ravel(np.argwhere(dotted > self.split_point))
         return left, right
 
 
-# choose a random unit direction v ∈ R
-# pick any x ∈ S; let y ∈ S be the farthest point from it
-# choose δ uniformly at random in [−1, 1] · 6||x − y||/√D
-# Rule(x) := x · v ≤ (median({z · v : z ∈ S}) + δ)
-def rptree_max_chooserule(vectors: np.ndarray) -> SplitRule:
-
-    # Just go with projection between for very small sets
-    # which we probably shouldn't be using anyway
-    if len(vectors) < 20:
-        return projection_between_chooserule(vectors)
-
+def random_partition_chooserule(vectors: np.ndarray) -> SplitRule:
     projection = random_projection(vectors.shape[1])
+    return RPTreeMaxSplitRule(projection)
 
+
+def _rptree_chooserule_with_median(vectors, projection) -> SplitRule:
     x = vectors[np.random.choice(len(vectors))]
     farthest_from_x = vectors[np.dot(vectors, x).argmin()]
 
@@ -223,16 +217,45 @@ def rptree_max_chooserule(vectors: np.ndarray) -> SplitRule:
         return np.linalg.norm(v1 - v2)
     dist = euclidean_distance(x, farthest_from_x)
 
-    chosen = np.random.uniform(low=-0.1, high=0.1)
+    chosen = np.random.uniform(low=-1.0, high=1.0)
     delta = chosen * (6 * dist) / np.sqrt(vectors.shape[1])
 
     # Median of this will tend t obe 0, no?
+    # and thus just means this becomes a random projection?
     dotted = np.dot(vectors, projection)
     min_dot = np.min(dotted)
     max_dot = np.max(dotted)
     median = np.median(np.dot(vectors, projection))
 
     if (median + delta) > min_dot and (median + delta) < max_dot:
-        return RPTreeMaxSplitRule(delta, median, projection)
+        return RPTreeMaxSplitRule(projection, median, delta)
     else:
-        return RPTreeMaxSplitRule(0, 0, projection)
+        return random_partition_chooserule(vectors)
+
+
+# choose a random unit direction v ∈ R
+# pick any x ∈ S; let y ∈ S be the farthest point from it
+# choose δ uniformly at random in [−1, 1] · 6||x − y||/√D
+# Rule(x) := x · v ≤ (median({z · v : z ∈ S}) + δ)
+def rptree_max_chooserule(vectors: np.ndarray) -> SplitRule:
+    # Just go with projection between for very small sets
+    # which we probably shouldn't be using anyway
+    if len(vectors) < 20:
+        return projection_between_chooserule(vectors)
+    projection = random_projection(vectors.shape[1])
+    return _rptree_chooserule_with_median(vectors, projection)
+
+
+def rptree_proj_maxvar_chooserule(vectors: np.ndarray) -> SplitRule:
+    """Find random projections with maximim variance."""
+    max_var = 0
+    max_var_proj = None
+    # Really this could just be getting the SVD of the matrix
+    for i in range(0, 10):
+        projection = random_projection(vectors.shape[1])
+        var = np.dot(vectors, projection).var()
+        if var > max_var:
+            max_var = var
+            max_var_proj = projection
+
+    return _rptree_chooserule_with_median(vectors, max_var_proj)

@@ -1,9 +1,11 @@
 """Test space partitionining splits."""
 import numpy as np
+import pytest
 
 from test_utils import as_normed_vects, w_scenarios, many_close_to
+import glove_samples
 from np_sims.partition import kdtree_maxvar_chooserule, kdtree_randdim_chooserule, projection_between_chooserule
-from np_sims.partition import rptree_max_chooserule
+from np_sims.partition import rptree_max_chooserule, rptree_proj_maxvar_chooserule
 from np_sims.partition import KdTreeSplitRule, ProjectionBetweenSplitRule
 
 # Larger dimensional test cases, fixture created with nearest and farthest neighbors of
@@ -85,7 +87,7 @@ def test_partition_proj_between(vectors, rng_seed):
 def test_partition_rptree_max(vectors, rng_seed):
     np.random.seed(rng_seed)
 
-    splitter = rptree_max_chooserule(vectors)
+    splitter = rptree_max_chooserule(vectors, split_median=False)
     left, right = splitter.split(vectors)
     # assert len(left) != 0
     # assert len(right) != 0
@@ -96,11 +98,35 @@ def test_partition_rptree_max(vectors, rng_seed):
     assert len(left) > 0
     assert len(right) > 0
 
-    # Avg similarity of left and right should be higher
-    # than similarity of left and right to each other
-    left_avg_sim = np.mean(np.dot(left_vectors, left_vectors.T))
-    right_avg_sim = np.mean(np.dot(right_vectors, right_vectors.T))
-    all_avg_sim = np.mean(np.dot(vectors, vectors.T))
+    # Split by split point in teh direction of the projection
+    assert (np.dot(left_vectors, splitter.projection) <= splitter.split_point).all()
+    assert (np.dot(right_vectors, splitter.projection) > splitter.split_point).all()
 
-    assert left_avg_sim > all_avg_sim
-    assert right_avg_sim > all_avg_sim
+
+@pytest.mark.parametrize("seed", range(0, 400))
+def test_rptree_with_glove(seed):
+    vectors = np.load("test/glove_sample.npy")
+
+    np.random.seed(seed)
+    # splitter = kdtree_maxvar_chooserule(vectors)
+    splitter = rptree_proj_maxvar_chooserule(vectors)
+
+    left, right = splitter.split(vectors)
+    assert len(left) != 0
+    assert len(right) != 0
+
+    king = glove_samples.king
+    king_idx = 774
+    king_nn = np.dot(vectors, king).argsort()[-10:]
+    # king_fn = np.dot(vectors, king).argsort()[:10]
+
+    king_right_nn_count = len(set(king_nn).intersection(set(right)))
+    king_left_nn_count = len(set(king_nn).intersection(set(left)))
+
+    # king_right_fn_count = len(set(king_fn).intersection(set(right)))
+    # king_left_fn_count = len(set(king_fn).intersection(set(left)))
+
+    if king_idx in right:
+        assert king_right_nn_count > king_left_nn_count
+    else:
+        assert king_left_nn_count > king_right_nn_count
