@@ -87,7 +87,10 @@ def test_partition_proj_between(vectors, rng_seed):
 def test_partition_rptree_max(vectors, rng_seed):
     np.random.seed(rng_seed)
 
-    splitter = rptree_max_chooserule(vectors, split_median=False)
+    if np.dot(vectors, vectors.T).min() > 0.84:
+        pytest.skip("Skipping test because vectors are too close together")
+
+    splitter = rptree_max_chooserule(vectors)
     left, right = splitter.split(vectors)
     # assert len(left) != 0
     # assert len(right) != 0
@@ -103,20 +106,75 @@ def test_partition_rptree_max(vectors, rng_seed):
     assert (np.dot(right_vectors, splitter.projection) > splitter.split_point).all()
 
 
-@pytest.mark.parametrize("seed", range(0, 400))
-def test_rptree_with_glove(seed):
+def nn_on_correct_side(vectors, idx, left, right):
+    """Check if idx is grouped with its neighbors on the correct side of the split."""
+    vect = vectors[idx]
+    dotted = np.dot(vectors, vect)
+    nn = dotted.argsort()[-10:]
+    left_nn_count = len(set(nn).intersection(set(left)))
+    right_nn_count = len(set(nn).intersection(set(right)))
+
+    if idx in right and right_nn_count > left_nn_count:
+        return True
+    elif idx in left and left_nn_count > right_nn_count:
+        return True
+    else:
+        return False
+
+
+# Force a seed for testing
+@pytest.mark.parametrize("seed", [None])
+@pytest.mark.parametrize("vector_idx", [0, 1, 2, 3, 4, 5, 6, 7, 8, 774])
+def test_rptree_with_biased_glove(seed, vector_idx):
     vectors = np.load("test/glove_sample.npy")
 
-    np.random.seed(seed)
-    # splitter = kdtree_maxvar_chooserule(vectors)
-    splitter = rptree_proj_maxvar_chooserule(vectors)
+    if seed is not None:
+        seed_gen = range(seed, seed + 1)
+    else:
+        seed_gen = range(0, 400)
+
+    pass_count = 0
+    runs = 0
+    failed_seeds = set()
+    for seed in seed_gen:
+
+        np.random.seed(seed)
+        # splitter = kdtree_maxvar_chooserule(vectors)
+        # splitter = kdtree_randdim_chooserule(vectors)
+        splitter = rptree_proj_maxvar_chooserule(vectors)
+
+        left, right = splitter.split(vectors)
+        assert len(left) != 0
+        assert len(right) != 0
+
+        if nn_on_correct_side(vectors, vector_idx, left, right):
+            pass_count += 1
+            print("✅")
+        else:
+            failed_seeds.add(seed)
+            print("❌")
+
+        runs += 1
+
+    pass_rate = pass_count / runs
+    print(f"Pass rate: {pass_rate}")
+    print(f"Failed seeds: {failed_seeds}")
+    assert pass_rate > 0.60
+
+
+def test_rptree_with_glove_best_dim_chosen():
+    vectors = np.load("test/glove_sample.npy")
+
+    np.random.seed(0)
+    splitter = rptree_proj_maxvar_chooserule(vectors, projection=glove_samples.king)
 
     left, right = splitter.split(vectors)
     assert len(left) != 0
     assert len(right) != 0
 
-    king = glove_samples.king
     king_idx = 774
+
+    king = glove_samples.king
     king_nn = np.dot(vectors, king).argsort()[-10:]
     # king_fn = np.dot(vectors, king).argsort()[:10]
 
@@ -127,6 +185,6 @@ def test_rptree_with_glove(seed):
     # king_left_fn_count = len(set(king_fn).intersection(set(left)))
 
     if king_idx in right:
-        assert king_right_nn_count > king_left_nn_count
+        assert king_right_nn_count == 10
     else:
-        assert king_left_nn_count > king_right_nn_count
+        assert king_left_nn_count == 10

@@ -210,27 +210,23 @@ def random_partition_chooserule(vectors: np.ndarray) -> SplitRule:
 
 
 def _rptree_chooserule_with_median(vectors, projection) -> SplitRule:
-    x = vectors[np.random.choice(len(vectors))]
-    farthest_from_x = vectors[np.dot(vectors, x).argmin()]
+    # x = vectors[np.random.choice(len(vectors))]
+    # farthest_from_x = vectors[np.dot(vectors, x).argmin()]
 
-    def euclidean_distance(v1, v2):
-        return np.linalg.norm(v1 - v2)
-    dist = euclidean_distance(x, farthest_from_x)
+    # def euclidean_distance(v1, v2):
+    #     return np.linalg.norm(v1 - v2)
+    # dist = euclidean_distance(x, farthest_from_x)
 
-    chosen = np.random.uniform(low=-1.0, high=1.0)
-    delta = chosen * (6 * dist) / np.sqrt(vectors.shape[1])
+    # Paper suggests this 'jitter' which seems to often go out of the bounds
+    # I am using quantiles as suggested by the rpforests paper
+    # delta = chosen * (6 * dist) / np.sqrt(vectors.shape[1])
 
-    # Median of this will tend t obe 0, no?
-    # and thus just means this becomes a random projection?
     dotted = np.dot(vectors, projection)
-    min_dot = np.min(dotted)
-    max_dot = np.max(dotted)
-    median = np.median(np.dot(vectors, projection))
+    quartiles = np.quantile(dotted, [0.25, 0.5, 0.75])
 
-    if (median + delta) > min_dot and (median + delta) < max_dot:
-        return RPTreeMaxSplitRule(projection, median, delta)
-    else:
-        return random_partition_chooserule(vectors)
+    delta = np.random.uniform(low=quartiles[0], high=quartiles[2])
+
+    return RPTreeMaxSplitRule(projection, median=quartiles[1], delta=delta)
 
 
 # choose a random unit direction v ∈ R
@@ -246,16 +242,21 @@ def rptree_max_chooserule(vectors: np.ndarray) -> SplitRule:
     return _rptree_chooserule_with_median(vectors, projection)
 
 
-def rptree_proj_maxvar_chooserule(vectors: np.ndarray) -> SplitRule:
+def rptree_proj_maxvar_chooserule(vectors: np.ndarray, projection=None) -> SplitRule:
     """Find random projections with maximim variance."""
     max_var = 0
     max_var_proj = None
-    # Really this could just be getting the SVD of the matrix
-    for i in range(0, 10):
-        projection = random_projection(vectors.shape[1])
-        var = np.dot(vectors, projection).var()
-        if var > max_var:
-            max_var = var
-            max_var_proj = projection
+
+    if projection is None:
+        # Really this could just be getting the PCA of the vectors
+        for i in range(0, 1):
+            projection = random_projection(vectors.shape[1])
+            var = np.dot(vectors, projection).max()
+            if var > max_var:
+                print(var)
+                max_var = var
+                max_var_proj = projection
+    else:
+        max_var_proj = projection
 
     return _rptree_chooserule_with_median(vectors, max_var_proj)
