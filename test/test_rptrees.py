@@ -54,7 +54,7 @@ def test_fitting(vectors, query, rng_seed):
     if np.max(nearest_neighbor) == 1.0:
         exact_nn = np.argmax(nearest_neighbor)
     for depth in range(5, 40):
-        tree = _fit(vectors, depth=depth)
+        tree = _fit(vectors, depth=depth, max_leaf_size=1)
         assert tree is not None
         vectors_hashed = np.zeros(len(vectors), dtype=np.uint64)
         vectors_hashed = _rp_hash(tree, vectors, vectors_hashed, depth=depth)
@@ -71,14 +71,15 @@ def test_rp_tree(vectors, query, rng_seed):
 
     tree = RandomProjectionTree.build(vectors, seed=rng_seed)
     nearest = tree.query(query)[0]
-    assert nearest == nearest_neighbor
+    assert nearest_neighbor in nearest
 
     tree.save("/tmp/test.pkl")
     tree2 = RandomProjectionTree.load("/tmp/test.pkl")
     assert (tree2.sorted_hashes == tree.sorted_hashes).all()
     assert (tree2.sorted_idxs == tree.sorted_idxs).all()
     nearest2 = tree2.query(query)[0]
-    assert nearest2 == nearest_neighbor
+    assert nearest_neighbor in nearest2
+    assert (nearest == nearest2).all()
 
 
 def test_with_flat_query_vector():
@@ -94,5 +95,5 @@ def test_with_flat_query_vector():
     nearest_unflattened = tree.query(query)[0]
 
     assert nearest_flattened.shape == nearest_unflattened.shape
-    assert nearest_flattened == nearest_neighbor
-    assert nearest_unflattened == nearest_neighbor
+    assert nearest_neighbor in nearest_flattened
+    assert nearest_neighbor in nearest_unflattened

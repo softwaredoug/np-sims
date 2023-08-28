@@ -1,20 +1,25 @@
 from typing import Optional
 import pickle
 from time import perf_counter
-from math import log2, ceil
 
 import numpy as np
 from np_sims.partition import rptree_max_chooserule
 
 
-DEFAULT_DEPTH = 5
+DEFAULT_DEPTH = 15
+MAX_PER_LEAF = 10
 
 
-def _fit(vectors: np.ndarray, depth: int = DEFAULT_DEPTH):
+def _fit(vectors: np.ndarray, depth: int = DEFAULT_DEPTH, max_leaf_size: int = MAX_PER_LEAF):
     """Build a random projection tree from a set of vectors."""
     # TODO sample before calling this function
     # Sample N vectors, get the two with smallest dot product
     # between them
+
+    if len(vectors) < max_leaf_size or depth <= 0:
+        print("Bottomed out")
+        return None
+
     N = 100000
     sample = vectors
     if len(vectors) > N:
@@ -22,13 +27,10 @@ def _fit(vectors: np.ndarray, depth: int = DEFAULT_DEPTH):
     splitter = rptree_max_chooserule(sample)
     lhs_idx, rhs_idx = splitter.split(vectors)
 
-    if depth > 1:
-        left = _fit(vectors[lhs_idx], depth - 1) if len(lhs_idx) > 1 else None
-        right = _fit(vectors[rhs_idx], depth - 1) if len(rhs_idx) > 1 else None
+    left = _fit(vectors[lhs_idx], depth - 1) if len(lhs_idx) > 1 else None
+    right = _fit(vectors[rhs_idx], depth - 1) if len(rhs_idx) > 1 else None
 
-        return splitter, left, right
-    else:
-        return splitter, None, None
+    return splitter, left, right
 
 
 def _rp_hash(tree,
@@ -106,8 +108,15 @@ class RandomProjectionTree:
 
     def query(self, query: np.ndarray[np.float64]) -> np.ndarray[np.uint64]:
         """Run a query against the tree."""
-        most_similar = np.searchsorted(self.sorted_hashes, self.hash_of(query))
-        return self.sorted_idxs[most_similar], None
+        most_similar = np.searchsorted(self.sorted_hashes, self.hash_of(query))[0]
+        # Get all identical hashes
+        end = most_similar + 1
+        for end in range(most_similar + 1, len(self.sorted_hashes) + 1):
+            if end > len(self.sorted_hashes) - 1:
+                break
+            if self.sorted_hashes[end] != self.sorted_hashes[most_similar]:
+                break
+        return self.sorted_idxs[most_similar:end], None
 
     def _depth(self, tree):
         """Get the depth of a tree."""
@@ -154,4 +163,3 @@ class RandomProjectionTree:
             hash_str = self.hash_of(np.array([vectors[fn]]))[0]
             hash_str = f"{hash_str:064b}"
             print(f"{fn_term}: {hash_str[-DEFAULT_DEPTH:]}")
-        import pdb; pdb.set_trace()
