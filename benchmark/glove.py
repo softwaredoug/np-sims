@@ -16,6 +16,7 @@ sys.path.append(cwd)
 from np_sims.lsh import index, create_projections  # noqa: E402
 from np_sims.lsh import query_pure_python, query_with_hamming_top_n  # noqa: E402
 from np_sims.rp_trees import RandomProjectionTree  # noqa: E402
+from np_sims.partition import kdtree_maxvar_chooserule, rptree_max_chooserule  # noqa: E402
 
 
 def glove(num_to_sample=10000000):
@@ -83,6 +84,16 @@ def parse_algorithm_args():
                         nargs="+",
                         type=int,
                         help="For LSH, the number of projections to use")
+
+    parser.add_argument("--max_depth",
+                        type=int,
+                        default=10,
+                        help="For RpTree, max depth of tree")
+    parser.add_argument("--max_leaf_size",
+                        type=int,
+                        default=100,
+                        help="For RpTree, max leaf size of tree")
+
     parser.add_argument("--workers",
                         nargs=1,
                         default=1,
@@ -107,21 +118,22 @@ def get_test_algorithms(cmd_args):
                 hashes, projs = load_or_build_index(vectors, num_projections)
                 name = f"{query_method}_{num_projections}"
                 yield name, lsh_query_fn(query_method, hashes, projs)
-        elif query_method == "rp_tree":
-            try:
-                tree = RandomProjectionTree.load('data/rp_tree.pkl')
-                # Check what's nearby king
-                term_idx = terms.index("king\n")
-                tree.debug_dump(terms, vectors, term_idx)
-                import pdb; pdb.set_trace()
-            except FileNotFoundError:
-                start = perf_counter()
-                tree = RandomProjectionTree.build(vectors)
-                print(f"Building tree took {perf_counter() - start} seconds")
-                # tree.save('data/rp_tree.pkl')
-                term_idx = terms.index("king\n")
-                tree.debug_dump(terms, vectors, term_idx)
-                import pdb; pdb.set_trace()
+        elif query_method in ["kd_tree", "rp_tree"]:
+            start = perf_counter()
+            chooserule = None
+            if query_method == "kd_tree":
+                chooserule = kdtree_maxvar_chooserule
+            else:
+                chooserule = rptree_max_chooserule
+
+            tree = RandomProjectionTree.build(vectors,
+                                              depth=cmd_args.max_depth,
+                                              max_leaf_size=cmd_args.max_leaf_size,
+                                              chooserule=chooserule)
+            print(f"Building tree took {perf_counter() - start} seconds")
+            # tree.save('data/rp_tree.pkl')
+            term_idx = terms.index("king\n")
+            tree.debug_dump(terms, vectors, term_idx)
             yield "rp_tree", rp_tree_query_fn(query_method, tree)
         else:
             raise ValueError(f"Unknown algorithm: {query_method}")

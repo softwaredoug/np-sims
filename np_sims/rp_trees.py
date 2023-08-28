@@ -6,25 +6,25 @@ import numpy as np
 from np_sims.partition import rptree_max_chooserule
 
 
-DEFAULT_DEPTH = 15
+DEFAULT_DEPTH = 5
 MAX_PER_LEAF = 10
 
 
-def _fit(vectors: np.ndarray, depth: int = DEFAULT_DEPTH, max_leaf_size: int = MAX_PER_LEAF):
+def _fit(vectors: np.ndarray, depth: int = DEFAULT_DEPTH, max_leaf_size: int = MAX_PER_LEAF,
+         chooserule=rptree_max_chooserule):
     """Build a random projection tree from a set of vectors."""
     # TODO sample before calling this function
     # Sample N vectors, get the two with smallest dot product
     # between them
 
     if len(vectors) < max_leaf_size or depth <= 0:
-        print("Bottomed out")
         return None
 
     N = 100000
     sample = vectors
     if len(vectors) > N:
         sample = vectors[np.random.choice(len(vectors), N, replace=False)]
-    splitter = rptree_max_chooserule(sample)
+    splitter = chooserule(sample)
     lhs_idx, rhs_idx = splitter.split(vectors)
 
     left = _fit(vectors[lhs_idx], depth - 1) if len(lhs_idx) > 1 else None
@@ -78,13 +78,16 @@ class RandomProjectionTree:
             pickle.dump(self, f)
 
     @staticmethod
-    def build(vectors: np.ndarray, seed: Optional[int] = None):
+    def build(vectors: np.ndarray, seed: Optional[int] = None,
+              depth: int = DEFAULT_DEPTH,
+              max_leaf_size: int = MAX_PER_LEAF,
+              chooserule=rptree_max_chooserule):
         """Build a random projection tree from a set of vectors."""
         start = perf_counter()
         if seed is not None:
             np.random.seed(seed)
         print("fitting..")
-        root = _fit(vectors)
+        root = _fit(vectors, depth, max_leaf_size, chooserule)
         print(f"fitting took {perf_counter() - start} seconds")
         print("hashing each vector..")
         hashes = _rp_hash(root, vectors, np.zeros(len(vectors), dtype=np.uint64))
@@ -106,7 +109,7 @@ class RandomProjectionTree:
         hashes = np.zeros(dtype=np.uint64, shape=(len(vectors)))
         return _rp_hash(self.root, vectors, hashes)
 
-    def query(self, query: np.ndarray[np.float64]) -> np.ndarray[np.uint64]:
+    def query(self, query: np.ndarray[np.float64], n=10) -> np.ndarray[np.uint64]:
         """Run a query against the tree."""
         most_similar = np.searchsorted(self.sorted_hashes, self.hash_of(query))[0]
         # Get all identical hashes
@@ -115,6 +118,8 @@ class RandomProjectionTree:
             if end > len(self.sorted_hashes) - 1:
                 break
             if self.sorted_hashes[end] != self.sorted_hashes[most_similar]:
+                break
+            if end - most_similar > n:
                 break
         return self.sorted_idxs[most_similar:end], None
 
