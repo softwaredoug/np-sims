@@ -5,7 +5,7 @@ import pytest
 from test_utils import as_normed_vects, w_scenarios, many_close_to
 import glove_samples
 from np_sims.partition import kdtree_maxvar_chooserule, kdtree_randdim_chooserule, projection_between_chooserule
-from np_sims.partition import rptree_max_chooserule, rptree_proj_maxvar_chooserule
+from np_sims.partition import rptree_max_chooserule, rptree_proj_maxvar_chooserule, rptree_pca_chooserule
 from np_sims.partition import KdTreeSplitRule, ProjectionBetweenSplitRule
 
 # Larger dimensional test cases, fixture created with nearest and farthest neighbors of
@@ -122,43 +122,79 @@ def nn_on_correct_side(vectors, idx, left, right):
         return False
 
 
-# Force a seed for testing
-@pytest.mark.parametrize("seed", [None])
-@pytest.mark.parametrize("vector_idx", [0, 1, 2, 3, 4, 5, 6, 7, 8, 774])
-def test_rptree_with_biased_glove(seed, vector_idx):
-    vectors = np.load("test/glove_sample.npy")
-
-    if seed is not None:
-        seed_gen = range(seed, seed + 1)
-    else:
-        seed_gen = range(0, 400)
-
+def test_chooserule(vectors, seeds=[0], query_vectors=[],
+                    chooserule=kdtree_randdim_chooserule, verbose=False):
     pass_count = 0
     runs = 0
     failed_seeds = set()
-    for seed in seed_gen:
+    for seed in seeds:
 
         np.random.seed(seed)
-        # splitter = kdtree_maxvar_chooserule(vectors)
-        # splitter = kdtree_randdim_chooserule(vectors)
-        splitter = rptree_proj_maxvar_chooserule(vectors)
+        splitter = chooserule(vectors)
 
         left, right = splitter.split(vectors)
         assert len(left) != 0
         assert len(right) != 0
 
-        if nn_on_correct_side(vectors, vector_idx, left, right):
-            pass_count += 1
-            print("✅")
-        else:
-            failed_seeds.add(seed)
-            print("❌")
+        for vector_idx in query_vectors:
+            if nn_on_correct_side(vectors, vector_idx, left, right):
+                pass_count += 1
+                print("✅") if verbose else None
+            else:
+                failed_seeds.add(seed)
+                print("❌") if verbose else None
 
-        runs += 1
+            runs += 1
 
     pass_rate = pass_count / runs
     print(f"Pass rate: {pass_rate}")
     print(f"Failed seeds: {failed_seeds}")
+    return pass_rate
+
+
+# Force a seed for testing
+@pytest.mark.parametrize("seed", [None])
+@pytest.mark.parametrize("query_vectors", [None])
+def test_pca_rptree_with_biased_glove(seed, query_vectors):
+    vectors = np.load("test/glove_sample.npy")
+
+    if seed is not None:
+        seeds = range(seed, seed + 1)
+    else:
+        seeds = range(0, 400)
+
+    if query_vectors is not None:
+        query_vectors = range(query_vectors, query_vectors + 1)
+    else:
+        query_vectors = range(0, 1000)
+
+    pass_rate = test_chooserule(vectors,
+                                seeds=seeds,
+                                query_vectors=range(0, 1000),
+                                chooserule=rptree_pca_chooserule,
+                                verbose=False)
+    assert pass_rate > 0.70
+
+
+# Force a seed for testing
+@pytest.mark.parametrize("seed", [None])
+@pytest.mark.parametrize("query_vectors", [None])
+def test_rptree_with_biased_glove(seed, query_vectors):
+    vectors = np.load("test/glove_sample.npy")
+    if seed is not None:
+        seeds = range(seed, seed + 1)
+    else:
+        seeds = range(0, 400)
+
+    if query_vectors is not None:
+        query_vectors = range(query_vectors, query_vectors + 1)
+    else:
+        query_vectors = range(0, 1000)
+
+    pass_rate = test_chooserule(vectors,
+                                seeds=seeds,
+                                query_vectors=query_vectors,
+                                chooserule=rptree_proj_maxvar_chooserule)
     assert pass_rate > 0.60
 
 

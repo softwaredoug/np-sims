@@ -253,10 +253,26 @@ def rptree_proj_maxvar_chooserule(vectors: np.ndarray, projection=None) -> Split
             projection = random_projection(vectors.shape[1])
             var = np.dot(vectors, projection).max()
             if var > max_var:
-                print(var)
                 max_var = var
                 max_var_proj = projection
     else:
         max_var_proj = projection
 
     return _rptree_chooserule_with_median(vectors, max_var_proj)
+
+
+def rptree_pca_chooserule(vectors: np.ndarray) -> SplitRule:
+    """Find random projections using Principal Component Analysis."""
+    # Center / norm the matrix to std dev
+    means = vectors.mean(axis=0)
+    vectors_ctr = vectors - means
+    # Get covariance matrix
+    cov = np.cov(vectors_ctr.T)
+    eigvals, eigvecs = np.linalg.eig(cov)
+
+    eigvals_sorted_indices = np.argsort(eigvals)[::-1]
+    eigvals = eigvals[eigvals_sorted_indices]
+    eigvecs = eigvecs[:, eigvals_sorted_indices]
+
+    # Get the eigenvector with the largest eigenvalue
+    return _rptree_chooserule_with_median(vectors, eigvecs[eigvals.argmax()])

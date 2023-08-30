@@ -16,7 +16,7 @@ sys.path.append(cwd)
 from np_sims.lsh import index, create_projections  # noqa: E402
 from np_sims.lsh import query_pure_python, query_with_hamming_top_n  # noqa: E402
 from np_sims.rp_trees import RandomProjectionTree  # noqa: E402
-from np_sims.partition import kdtree_maxvar_chooserule, rptree_max_chooserule  # noqa: E402
+from np_sims.partition import kdtree_maxvar_chooserule, rptree_max_chooserule, rptree_pca_chooserule  # noqa: E402
 
 
 def glove(num_to_sample=10000000):
@@ -103,6 +103,11 @@ def parse_algorithm_args():
                         action="store_true",
                         help="Enable verbose debug output")
 
+    parser.add_argument("--seed",
+                        default=None,
+                        type=int,
+                        help="Enable verbose debug output")
+
     args = parser.parse_args()
     return args
 
@@ -118,13 +123,15 @@ def get_test_algorithms(cmd_args):
                 hashes, projs = load_or_build_index(vectors, num_projections)
                 name = f"{query_method}_{num_projections}"
                 yield name, lsh_query_fn(query_method, hashes, projs)
-        elif query_method in ["kd_tree", "rp_tree"]:
+        elif query_method in ["kd_tree", "rp_tree", "pca_tree"]:
             start = perf_counter()
             chooserule = None
             if query_method == "kd_tree":
                 chooserule = kdtree_maxvar_chooserule
-            else:
+            elif query_method == "rp_tree":
                 chooserule = rptree_max_chooserule
+            elif query_method == "pca_tree":
+                chooserule = rptree_pca_chooserule
 
             tree = RandomProjectionTree.build(vectors,
                                               depth=cmd_args.max_depth,
@@ -139,7 +146,7 @@ def get_test_algorithms(cmd_args):
             raise ValueError(f"Unknown algorithm: {query_method}")
 
 
-def benchmark(terms, vectors, query_fn, workers, debug=False, num_queries=10):
+def benchmark(terms, vectors, query_fn, workers, debug=False, num_queries=1000):
 
     # Randomly select N terms
     query_idxs = np.random.randint(0, len(terms), size=num_queries)
@@ -246,6 +253,9 @@ def load_or_build_index(vectors, num_projections=640):
 if __name__ == "__main__":
     terms, vectors = glove()
     cmd_args = parse_algorithm_args()
+
+    if cmd_args.seed is not None:
+        np.random.seed(cmd_args.seed)
 
     results = []
     for name, query_fn in get_test_algorithms(cmd_args):
