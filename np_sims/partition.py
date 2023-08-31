@@ -276,3 +276,32 @@ def rptree_pca_chooserule(vectors: np.ndarray) -> SplitRule:
 
     # Get the eigenvector with the largest eigenvalue
     return _rptree_chooserule_with_median(vectors, eigvecs[eigvals.argmax()])
+
+
+class MultiProjectionSplitRule(SplitRule):
+    def __init__(self, projections):
+        self.projections = projections
+
+    # Spli
+    def split(self, vectors: np.ndarray):
+        """Get a random projection tree for a set of vectors."""
+        side = np.zeros(len(vectors), dtype=np.int8)
+        for proj in self.projections:
+            dotted = np.dot(vectors, proj)
+            lhs = np.ravel(np.argwhere(dotted <= 0))
+            rhs = np.ravel(np.argwhere(dotted > 0))
+            side[lhs] -= 1
+            side[rhs] += 1
+        # Count > 0
+        left = np.ravel(np.argwhere(side > 0))
+        right = np.ravel(np.argwhere(side <= 0))
+        assert len(left) + len(right) == len(vectors)
+        return left, right
+
+
+def multi_projection_chooserule(vectors: np.ndarray, num_projections=20) -> SplitRule:
+    """Choose a random projection vector that splits two random vectors chosen."""
+    # Choose two random vectors
+    projections = np.random.normal(size=(num_projections, vectors.shape[1]))
+    projections /= np.linalg.norm(projections, axis=1, keepdims=True)
+    return MultiProjectionSplitRule(projections)

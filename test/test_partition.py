@@ -7,6 +7,7 @@ import glove_samples
 from np_sims.partition import kdtree_maxvar_chooserule, kdtree_randdim_chooserule, projection_between_chooserule
 from np_sims.partition import rptree_max_chooserule, rptree_proj_maxvar_chooserule, rptree_pca_chooserule
 from np_sims.partition import KdTreeSplitRule, ProjectionBetweenSplitRule
+from np_sims.partition import multi_projection_chooserule
 
 # Larger dimensional test cases, fixture created with nearest and farthest neighbors of
 # king
@@ -176,7 +177,6 @@ def test_pca_rptree_with_biased_glove(seed, query_vectors):
     assert pass_rate > 0.70
 
 
-# Force a seed for testing
 @pytest.mark.parametrize("seed", [None])
 @pytest.mark.parametrize("query_vectors", [None])
 def test_rptree_with_biased_glove(seed, query_vectors):
@@ -198,6 +198,28 @@ def test_rptree_with_biased_glove(seed, query_vectors):
     assert pass_rate > 0.60
 
 
+@pytest.mark.parametrize("seed", [None])
+@pytest.mark.parametrize("query_vectors", [None])
+def test_rptree_multiprojection(seed, query_vectors):
+    vectors = np.load("test/glove_sample.npy")
+    if seed is not None:
+        seeds = range(seed, seed + 1)
+    else:
+        seeds = range(0, 400)
+
+    if query_vectors is not None:
+        query_vectors = range(query_vectors, query_vectors + 1)
+    else:
+        query_vectors = range(0, 1000)
+
+    pass_rate = test_chooserule(vectors,
+                                seeds=seeds,
+                                query_vectors=query_vectors,
+                                chooserule=multi_projection_chooserule,
+                                verbose=False)
+    assert pass_rate > 0.60
+
+
 def test_rptree_with_glove_best_dim_chosen():
     vectors = np.load("test/glove_sample.npy")
 
@@ -207,6 +229,7 @@ def test_rptree_with_glove_best_dim_chosen():
     left, right = splitter.split(vectors)
     assert len(left) != 0
     assert len(right) != 0
+    assert len(left) + len(right) == len(vectors)
 
     king_idx = 774
 
