@@ -123,8 +123,8 @@ def nn_on_correct_side(vectors, idx, left, right):
         return False
 
 
-def test_chooserule(vectors, seeds=[0], query_vectors=[],
-                    chooserule=kdtree_randdim_chooserule, verbose=False):
+def run_chooserule_scenario(vectors, seeds=[0], query_vectors=[],
+                            chooserule=kdtree_randdim_chooserule, verbose=False):
     pass_count = 0
     runs = 0
     failed_seeds = set()
@@ -169,11 +169,11 @@ def test_pca_rptree_with_biased_glove(seed, query_vectors):
     else:
         query_vectors = range(0, 1000)
 
-    pass_rate = test_chooserule(vectors,
-                                seeds=seeds,
-                                query_vectors=range(0, 1000),
-                                chooserule=rptree_pca_chooserule,
-                                verbose=False)
+    pass_rate = run_chooserule_scenario(vectors,
+                                        seeds=seeds,
+                                        query_vectors=range(0, 1000),
+                                        chooserule=rptree_pca_chooserule,
+                                        verbose=False)
     assert pass_rate > 0.70
 
 
@@ -191,10 +191,10 @@ def test_rptree_with_biased_glove(seed, query_vectors):
     else:
         query_vectors = range(0, 1000)
 
-    pass_rate = test_chooserule(vectors,
-                                seeds=seeds,
-                                query_vectors=query_vectors,
-                                chooserule=rptree_proj_maxvar_chooserule)
+    pass_rate = run_chooserule_scenario(vectors,
+                                        seeds=seeds,
+                                        query_vectors=query_vectors,
+                                        chooserule=rptree_proj_maxvar_chooserule)
     assert pass_rate > 0.60
 
 
@@ -212,11 +212,11 @@ def test_rptree_multiprojection(seed, query_vectors):
     else:
         query_vectors = range(0, 1000)
 
-    pass_rate = test_chooserule(vectors,
-                                seeds=seeds,
-                                query_vectors=query_vectors,
-                                chooserule=multi_projection_chooserule,
-                                verbose=False)
+    pass_rate = run_chooserule_scenario(vectors,
+                                        seeds=seeds,
+                                        query_vectors=query_vectors,
+                                        chooserule=multi_projection_chooserule,
+                                        verbose=False)
     assert pass_rate > 0.60
 
 
