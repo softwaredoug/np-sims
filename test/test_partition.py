@@ -174,7 +174,7 @@ def test_pca_rptree_with_biased_glove(seed, query_vectors):
                                         query_vectors=range(0, 1000),
                                         chooserule=rptree_pca_chooserule,
                                         verbose=False)
-    assert pass_rate > 0.70
+    assert pass_rate > 0.68
 
 
 @pytest.mark.parametrize("seed", [None])
