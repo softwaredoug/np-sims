@@ -341,17 +341,15 @@ void hamming_top_n_simd_2(uint64_t* hashes, uint64_t* query,
 
   /* Load query into registers */
   uint64x2_t q0 = vld1q_u64(query);
-  uint16x8_t sum0;
 
   for (uint64_t i = 0; i < num_hashes; i++) {
     /* current hashes into registers */
     uint64x2_t h0 = vld1q_u64(hashes);
-    sum0 = simd_popcount(h0, q0);
 
     maybe_insert_into_queue(&queue,
-                            vaddvq_s16(sum0),
+                            vaddvq_s16(simd_popcount(h0, q0)),
                             i,
-                            10);
+                            output_len);
     hashes += 2;
   }
 }
@@ -364,19 +362,16 @@ void hamming_top_n_simd_4(uint64_t* hashes, uint64_t* query,
   /* Load query into registers */
   uint64x2_t q0 = vld1q_u64(query);
   uint64x2_t q1 = vld1q_u64(&query[2]);
-  uint16x8_t sum0;
 
   for (uint64_t i = 0; i < num_hashes; i++) {
     /* current hashes into registers */
     uint64x2_t h0 = vld1q_u64(hashes);
     uint64x2_t h1 = vld1q_u64(&hashes[2]);
-    sum0 = simd_popcount(h0, q0);
-    sum0 = vaddq_u16(sum0, simd_popcount(h1, q1));
 
     maybe_insert_into_queue(&queue,
-                            vaddvq_s16(sum0),
+                            vaddvq_s16(vaddq_u16(simd_popcount(h0, q0), simd_popcount(h1, q1))),
                             i,
-                            10);
+                            output_len);
     hashes += 4;
   }
 }
@@ -409,7 +404,7 @@ void hamming_top_n_simd_8(uint64_t* hashes, uint64_t* query,
     maybe_insert_into_queue(&queue,
                             vaddvq_s16(sum0),
                             i,
-                            10);
+                            output_len);
     hashes += 8;
   }
 }
