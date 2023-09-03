@@ -324,6 +324,7 @@ void hamming_top_n_default(uint64_t* hashes, uint64_t* query, uint64_t* query_st
 /* Neon SIMD implementations */
 
 #if defined(__ARM_NEON) || defined(__ARM_NEON__)
+
 inline uint16x8_t simd_popcount(uint64x2_t h, uint64x2_t q) {
     return  vpaddlq_u8(    /* Get as 16 bit - so we can accumulate without overflow */
                 vcntq_u8(        /* Popcount each byte  -> bytes with their popcount */
@@ -604,6 +605,14 @@ void hamming_top_n_default_simd(uint64_t* hashes, uint64_t* query, uint64_t* que
 
 #ifndef hamming_top_n_simd_10
 #define hamming_top_n_simd_10 hamming_top_n_hash_10
+#endif
+
+#ifndef hamming_top_n_simd_40
+inline void hamming_top_n_simd_40(uint64_t* hashes, uint64_t* query,
+                                  uint64_t num_hashes, uint64_t* best_rows) {
+  uint64_t query_start = query;
+  hamming_top_n_default(hashes, query, num_hashes, 40, best_rows);
+}
 #endif
 
 
