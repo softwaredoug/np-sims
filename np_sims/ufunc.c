@@ -588,30 +588,16 @@ void hamming_top_n_default_simd(uint64_t* hashes, uint64_t* query, uint64_t* que
     }
 }
 
-#endif /* ARM_NEON */
-
-/* no SIMD, use default */
-#ifndef hamming_top_n_simd_2
+#else
 #define hamming_top_n_simd_2 hamming_top_n_hash_2
-#endif
-
-#ifndef hamming_top_n_simd_4
 #define hamming_top_n_simd_4 hamming_top_n_hash_4
-#endif
-
-#ifndef hamming_top_n_simd_8
 #define hamming_top_n_simd_8 hamming_top_n_hash_8
-#endif
-
-#ifndef hamming_top_n_simd_10
 #define hamming_top_n_simd_10 hamming_top_n_hash_10
-#endif
-
-#ifndef hamming_top_n_simd_40
 inline void hamming_top_n_simd_40(uint64_t* hashes, uint64_t* query,
-                                  uint64_t num_hashes, uint64_t* best_rows) {
-  uint64_t query_start = query;
-  hamming_top_n_default(hashes, query, num_hashes, 40, best_rows);
+                                  uint64_t num_hashes, uint64_t* best_rows,
+                                  uint64_t output_len) {
+  uint64_t* query_start = query;
+  hamming_top_n_default(hashes, query, query_start, num_hashes, 40, best_rows);
 }
 #endif
 
