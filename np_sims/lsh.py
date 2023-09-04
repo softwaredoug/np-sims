@@ -1,5 +1,5 @@
 import numpy as np
-from np_sims import hamming_c, hamming_top_n, hamming_naive
+from np_sims import hamming_c, hamming_top_10, hamming_top_cand, hamming_naive
 
 
 def random_projection(dims):
@@ -61,10 +61,15 @@ def index(vectors, projections):
     return hashes
 
 
+def index_q(query_vector, projections):
+    dotted = np.dot(projections, query_vector)
+    return np.packbits(dotted >= 0, bitorder='little').view(np.uint64)
+
+
 def query_with_hamming_then_slow_argsort(vector, hashes, projections, hamming_func=hamming_c, n=10):
     """Query using C-based hamming similarity."""
     # Compute the hashes for the vector
-    query_hash = index([vector], projections)[0]
+    query_hash = index_q(vector, projections)
     # Compute the hamming distance between the query and all hashes
     hammings = hamming_func(hashes, query_hash)
     # Sort ascending, 0 is most similar <-- actual bottleneck
@@ -75,7 +80,7 @@ def query_with_hamming_then_slow_argsort(vector, hashes, projections, hamming_fu
 
 def query_pure_python(vector, hashes, projections, hamming_func=hamming_naive, n=10):
     # Compute the hashes for the vector
-    query_hash = index([vector], projections)[0]
+    query_hash = index_q(vector, projections)
     # Compute the hamming distance between the query and all hashes
     hammings = hamming_func(hashes, query_hash)
     # Sort ascending, 0 is most similar <-- actual bottleneck
@@ -86,9 +91,26 @@ def query_pure_python(vector, hashes, projections, hamming_func=hamming_naive, n
 
 def query_with_hamming_top_n(vector, hashes, projections, hamming_func=hamming_c, n=10):
     """Query using C-based hamming similarity w/ top N."""
-    query_hash = index([vector], projections)[0]
-    best = hamming_top_n(hashes, query_hash)
+    query_hash = index_q(vector, projections)
+    best = hamming_top_10(hashes, query_hash)
     return best, None
+
+
+def front_hashes(hashes, front_bits=64):
+    """Return the first front_bits bits of each hash."""
+    front_len_64 = front_bits // 64
+    # Get front_len_64 columns
+    return hashes[:, 0:front_len_64].copy()
+
+
+def query_with_hamming_top_n_two_phase(vector, front_hashes, hashes, projections, hamming_func=hamming_c, n=10):
+    """Query using C-based hamming similarity w/ top N."""
+    query_hash = index_q(vector, projections)
+    query_hash_front = query_hash[:front_hashes.shape[1]].copy()
+
+    candidates = hamming_top_cand(front_hashes, query_hash_front)
+    best = hamming_top_10(hashes[candidates], query_hash)
+    return candidates[best], None
 
 
 query = query_with_hamming_top_n  # Default query to fastest

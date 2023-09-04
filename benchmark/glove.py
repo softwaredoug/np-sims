@@ -15,6 +15,7 @@ sys.path.append(cwd)
 
 from np_sims.lsh import index, create_projections  # noqa: E402
 from np_sims.lsh import query_pure_python, query_with_hamming_top_n  # noqa: E402
+from np_sims.lsh import front_hashes, query_with_hamming_top_n_two_phase  # noqa: E402
 from np_sims.rp_trees import RandomProjectionTree  # noqa: E402
 from np_sims.partition import kdtree_maxvar_chooserule, rptree_max_chooserule, rptree_pca_chooserule  # noqa: E402
 
@@ -61,13 +62,14 @@ def most_similar_cos(vectors, query_idx):
     return top_idxs, sims[top_idxs]
 
 
-def lsh_query_fn(query_method, hashes, projs):
+def lsh_query_fn(query_method, hashes, projs, num_fronts=None):
     if query_method == "lsh_pure_python":
-        query_fn = query_pure_python
+        return lambda query_vector: query_pure_python(query_vector, hashes, projs)
     elif query_method == "lsh_pure_c":
-        query_fn = query_with_hamming_top_n
-
-    return lambda query_vector: query_fn(query_vector, hashes, projs)
+        return lambda query_vector: query_with_hamming_top_n(query_vector, hashes, projs)
+    elif query_method == "lsh_rerank_cand":
+        front = front_hashes(hashes, num_fronts)
+        return lambda query_vector: query_with_hamming_top_n_two_phase(query_vector, front, hashes, projs)
 
 
 def rp_tree_query_fn(query_method, rp_tree):
@@ -84,6 +86,11 @@ def parse_algorithm_args():
                         nargs="+",
                         type=int,
                         help="For LSH, the number of projections to use")
+    parser.add_argument("--num_fronts",
+                        nargs="+",
+                        type=int,
+                        default=None,
+                        help="For LSH rerank, the first pass projection to use")
 
     parser.add_argument("--max_depth",
                         type=int,
@@ -107,6 +114,10 @@ def parse_algorithm_args():
                         default=None,
                         type=int,
                         help="Enable verbose debug output")
+    parser.add_argument("--num_queries",
+                        type=int,
+                        default=1000,
+                        help="Number of queries to run")
 
     args = parser.parse_args()
     return args
@@ -114,15 +125,20 @@ def parse_algorithm_args():
 
 def get_test_algorithms(cmd_args):
     for query_method in cmd_args.algorithm:
-        if query_method in ["lsh_pure_python", "lsh_pure_c"]:
-            for projections in cmd_args.num_projections:
+        if query_method in ["lsh_pure_python", "lsh_pure_c", "lsh_rerank_cand"]:
+            fronts = cmd_args.num_fronts
+            if fronts is None:
+                fronts = [None] * len(cmd_args.num_projections)
+            for fronts, projections in zip(fronts, cmd_args.num_projections):
                 num_projections = int(projections)
                 print("----------------------")
                 print(f"Running with {num_projections} projections")
 
                 hashes, projs = load_or_build_index(vectors, num_projections)
                 name = f"{query_method}_{num_projections}"
-                yield name, lsh_query_fn(query_method, hashes, projs)
+                if fronts is not None:
+                    name += f"_fronts_{fronts}"
+                yield name, lsh_query_fn(query_method, hashes, projs, fronts)
         elif query_method in ["kd_tree", "rp_tree", "pca_tree"]:
             start = perf_counter()
             chooserule = None
@@ -146,7 +162,7 @@ def get_test_algorithms(cmd_args):
             raise ValueError(f"Unknown algorithm: {query_method}")
 
 
-def benchmark(terms, vectors, query_fn, workers, debug=False, num_queries=1000):
+def benchmark(terms, vectors, query_fn, workers, debug=False, num_queries=50):
 
     # Randomly select N terms
     query_idxs = np.random.randint(0, len(terms), size=num_queries)
@@ -160,38 +176,42 @@ def benchmark(terms, vectors, query_fn, workers, debug=False, num_queries=1000):
         gt_time += (perf_counter() - gt_start)
         results_gt[query_idx] = list(zip(result, sims))
 
-    zero_sims = [0] * 10
-
     def query(query_idx):
+        pr = cProfile.Profile()
+        pr.enable()
         my_start = perf_counter()
         result, sims = query_fn(vectors[query_idx])
-        return query_idx, result, sims, perf_counter() - my_start
+        pr.disable()
+        return query_idx, result, sims, perf_counter() - my_start, pr
 
-    with cProfile.Profile() as pr:
-        # Run LSH
-        results = {}
-        execution_times = 0     # Total wall time running the queries
-        single_query_times = 0  # Time per query in its thread
-        futures = []
-        with ThreadPoolExecutor(max_workers=workers) as executor:
-            start = perf_counter()
-            for query_idx in query_idxs:
-                futures.append(executor.submit(query, query_idx))
+    # Run LSH
+    results = {}
+    execution_times = 0     # Total wall time running the queries
+    single_query_times = 0  # Time per query in its thread
+    futures = []
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        start = perf_counter()
+        for query_idx in query_idxs:
+            futures.append(executor.submit(query, query_idx))
 
-            for future in as_completed(futures):
-                query_idx, result, sims, time = future.result()
-                stop = perf_counter()
-                single_query_times += time
-                if sims is None:
-                    sims = zero_sims
-                results[query_idx] = list(zip(result, sims))
-            execution_times = stop - start
+        pr_stats_all = pstats.Stats()
+        for future in as_completed(futures):
+            query_idx, result, sims, time, pr = future.result()
+            stop = perf_counter()
+            pr_stats_all.add(pr)
+            single_query_times += time
+            if sims is None:
+                sims = [0] * len(result)
+            results[query_idx] = list(zip(result, sims))
+        execution_times = stop - start
 
-        pr.dump_stats("top_n.prof")
+        pr_stats_all.dump_stats("top_n.prof")
 
     # Report results
     recall = 0
-    avg_recall = 0
+    avg_recall_10 = 0
+    avg_recall_max = 0
+    max_len = 0
     for query_idx in query_idxs:
         result = results[query_idx]
         result_gt = results_gt[query_idx]
@@ -202,9 +222,12 @@ def benchmark(terms, vectors, query_fn, workers, debug=False, num_queries=1000):
         result = [r[0] for r in result]
         result_gt = [r[0] for r in result_gt]
 
-        recall = len(set(result).intersection(set(result_gt))) / len(result_gt)
+        recall_10 = len(set(result[:10]).intersection(set(result_gt))) / len(result_gt)
+        recall_max = len(set(result).intersection(set(result_gt))) / len(result_gt)
+        max_len = len(result)
         query_term = terms[query_idx]
-        avg_recall += recall
+        avg_recall_10 += recall_10
+        avg_recall_max += recall_max
         print("  ----------------------------") if debug else None
         print(f"Term: {query_term} | Recall: {recall}") if debug else None
 
@@ -216,18 +239,21 @@ def benchmark(terms, vectors, query_fn, workers, debug=False, num_queries=1000):
 
         print(f"LSH: {term_with_sims}") if debug else None
         print(f" GT: {term_with_sims_gt}") if debug else None
-    avg_recall /= len(query_idxs)
+    avg_recall_10 /= len(query_idxs)
+    avg_recall_max /= len(query_idxs)
 
     qps = len(query_idxs) / execution_times
     gt_qp = len(query_idxs) / gt_time
     pstats.Stats("top_n.prof").strip_dirs().sort_stats("cumulative").print_stats(20) if debug else None
     print("Run num queries: ", len(query_idxs))
-    print(f"Mean recall: {avg_recall}")
-    print(f"     GT QPS: {gt_qp}")
-    print(f"        QPS: {qps}")
+    print(f"Mean recall@10    : {avg_recall_10}")
+    if max_len != 10:
+        print(f"Mean recall@{max_len}>10: {avg_recall_max}")
+    print(f"     GT QPS       : {gt_qp}")
+    print(f"        QPS       : {qps}")
     print("----------------------")
 
-    return qps, avg_recall
+    return qps, avg_recall_10
 
 
 def load_or_build_index(vectors, num_projections=640):
@@ -261,7 +287,8 @@ if __name__ == "__main__":
     for name, query_fn in get_test_algorithms(cmd_args):
         print(f"Running {name}")
         results.append((name, benchmark(terms, vectors, query_fn,
-                        workers=cmd_args.workers[0], debug=cmd_args.verbose)))
+                        workers=cmd_args.workers[0], debug=cmd_args.verbose,
+                        num_queries=cmd_args.num_queries)))
 
     for name, result in results:
         qps, recall = result
@@ -320,7 +347,7 @@ if __name__ == "__main__":
 # 2560 projections -- QPS 81.02739932963804 -- Recall 0.6396999999999985
 #
 # -------------------------------
-# Using SIMD
+# Using SIMD (dropped)
 # Algo: lsh_pure_c_64 -- QPS 2550.8807669409057 -- Recall 0.1380999999999981
 # Algo: lsh_pure_c_128 -- QPS 1585.288417006297 -- Recall 0.1870999999999977
 # Algo: lsh_pure_c_256 -- QPS 830.3471393242446 -- Recall 0.27399999999999886
