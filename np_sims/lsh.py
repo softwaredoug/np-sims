@@ -102,12 +102,10 @@ def query_with_hamming_top_n_two_phase(vector, front_hashes, hashes, projections
     """Query using C-based hamming similarity w/ top N."""
     query_hash = index([vector], projections)[0]
     query_hash_front = query_hash[:front_hashes.shape[1]].copy()
+
     candidates = hamming_top_cand(front_hashes, query_hash_front)
     best = hamming_top_10(hashes[candidates], query_hash)
     return candidates[best], None
-    # idxs = np.argsort(hammings)[:n]
-    # lsh_sims = hammings[idxs]
-    # return idxs, lsh_sims
 
 
 query = query_with_hamming_top_n  # Default query to fastest

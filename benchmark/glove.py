@@ -177,31 +177,35 @@ def benchmark(terms, vectors, query_fn, workers, debug=False, num_queries=50):
         results_gt[query_idx] = list(zip(result, sims))
 
     def query(query_idx):
+        pr = cProfile.Profile()
+        pr.enable()
         my_start = perf_counter()
         result, sims = query_fn(vectors[query_idx])
-        return query_idx, result, sims, perf_counter() - my_start
+        pr.disable()
+        return query_idx, result, sims, perf_counter() - my_start, pr
 
-    with cProfile.Profile() as pr:
-        # Run LSH
-        results = {}
-        execution_times = 0     # Total wall time running the queries
-        single_query_times = 0  # Time per query in its thread
-        futures = []
-        with ThreadPoolExecutor(max_workers=workers) as executor:
-            start = perf_counter()
-            for query_idx in query_idxs:
-                futures.append(executor.submit(query, query_idx))
+    # Run LSH
+    results = {}
+    execution_times = 0     # Total wall time running the queries
+    single_query_times = 0  # Time per query in its thread
+    futures = []
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        start = perf_counter()
+        for query_idx in query_idxs:
+            futures.append(executor.submit(query, query_idx))
 
-            for future in as_completed(futures):
-                query_idx, result, sims, time = future.result()
-                stop = perf_counter()
-                single_query_times += time
-                if sims is None:
-                    sims = [0] * len(result)
-                results[query_idx] = list(zip(result, sims))
-            execution_times = stop - start
+        pr_stats_all = pstats.Stats()
+        for future in as_completed(futures):
+            query_idx, result, sims, time, pr = future.result()
+            stop = perf_counter()
+            pr_stats_all.add(pr)
+            single_query_times += time
+            if sims is None:
+                sims = [0] * len(result)
+            results[query_idx] = list(zip(result, sims))
+        execution_times = stop - start
 
-        pr.dump_stats("top_n.prof")
+        pr_stats_all.dump_stats("top_n.prof")
 
     # Report results
     recall = 0

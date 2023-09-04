@@ -24,10 +24,6 @@
  * docs.python.org.
  */
 
-#ifndef NPY_ALLOW_THREADS
-#error NPY_ALLOW_THREADS must be defined
-#endif
-
 static PyMethodDef LogitMethods[] = {
     {NULL, NULL, 0, NULL}
 };
@@ -74,6 +70,7 @@ static void unshared_bits(char **args, const npy_intp *dimensions,
 #endif
 
 
+
 static void hamming(char **args, const npy_intp *dimensions,
                     const npy_intp *steps, void *data)
 {
@@ -87,6 +84,7 @@ static void hamming(char **args, const npy_intp *dimensions,
 
     /* is dimension now what  we're accumulating over? */
     uint64_t sum = 0;
+
     for (i = 0; i < num_hashes; i++) {
         sum = 0;
         in2 = in2_start;
@@ -104,39 +102,43 @@ static void hamming(char **args, const npy_intp *dimensions,
 
         out1 += sizeof(uint64_t);
     }
+
 }
 
-const uint64_t N = 10;
+#define TOP_N_QUEUE(N) \
+struct Top ## N ## Queue { \
+    uint64_t size; \
+    uint64_t out_queue_end; \
+    uint64_t worst_in_queue; \
+    uint64_t worst_in_queue_index; \
+    uint64_t* best_rows; \
+    uint64_t top_n_sim_scores[N]; \
+}; \
+const struct Top ## N ## Queue defaults_## N = { \
+    .size = N, \
+    .out_queue_end = 0, \
+    .best_rows = NULL, \
+    .worst_in_queue = UINT64_MAX, \
+    .worst_in_queue_index = 0 \
+}; \
+\
+struct Top ## N ## Queue create_ ## N ## _queue(uint64_t* best_rows) { \
+    struct Top ## N ## Queue queue = defaults_## N; \
+    queue.best_rows = best_rows; \
+    /* Initialize to UINT64_MAX*/ \
+    for (int i = 0; i < N; i++) { \
+        queue.top_n_sim_scores[i] = UINT64_MAX; \
+        queue.best_rows[i] = UINT64_MAX; \
+    } \
+    return queue; \
+} \
+\
 
 
-struct TopNQueue {
-    uint64_t out_queue_end;
-    uint64_t top_n_sim_scores[100];
-    uint64_t worst_in_queue;
-    uint64_t worst_in_queue_index;
-
-    uint64_t* best_rows;
-};
-
-const struct TopNQueue defaults = {
-    .out_queue_end = 0,
-    .top_n_sim_scores = {UINT64_MAX, UINT64_MAX, UINT64_MAX, UINT64_MAX, UINT64_MAX,
-                         UINT64_MAX, UINT64_MAX, UINT64_MAX, UINT64_MAX, UINT64_MAX},
-    .best_rows = NULL,
-    .worst_in_queue = UINT64_MAX,
-    .worst_in_queue_index = 0
-};
+TOP_N_QUEUE(10)
+TOP_N_QUEUE(1000)
 
 
-struct TopNQueue create_queue(uint64_t* best_rows) {
-    struct TopNQueue queue = defaults;
-    queue.best_rows = best_rows;
-    /* Initialize to UINT64_MAX*/
-    for (uint64_t i = 0; i < N; i++) {
-        best_rows[i] = UINT64_MAX;
-    }
-    return queue;
-}
 
 /*
  *
@@ -145,10 +147,10 @@ struct TopNQueue create_queue(uint64_t* best_rows) {
  *
  */
 
-inline void maybe_insert_into_queue(struct TopNQueue* queue, uint64_t sim_score,
-                                    uint64_t row_index, uint64_t queue_len) {
+void maybe_insert_into_queue_10(struct Top10Queue* queue, uint64_t sim_score,
+                                    uint64_t row_index) {
    if (sim_score < queue->worst_in_queue) {
-     if (queue->out_queue_end < queue_len) {
+     if (queue->out_queue_end < queue->size) {
        queue->best_rows[queue->out_queue_end] = row_index;
        queue->top_n_sim_scores[queue->out_queue_end] = sim_score;
        queue->out_queue_end++;
@@ -159,7 +161,7 @@ inline void maybe_insert_into_queue(struct TopNQueue* queue, uint64_t sim_score,
      }
      /* find new worst_in_queue */
      queue->worst_in_queue = 0;
-     for (uint64_t output_idx = 0; output_idx < queue_len; output_idx++) {
+     for (uint64_t output_idx = 0; output_idx < queue->size; output_idx++) {
        if (queue->top_n_sim_scores[output_idx] > queue->worst_in_queue) {
          queue->worst_in_queue = queue->top_n_sim_scores[output_idx];
          queue->worst_in_queue_index = output_idx;
@@ -169,59 +171,73 @@ inline void maybe_insert_into_queue(struct TopNQueue* queue, uint64_t sim_score,
 }
 
 
+void maybe_insert_into_queue_1000(struct Top1000Queue* queue, uint64_t sim_score,
+                                    uint64_t row_index) {
+   if (sim_score < queue->worst_in_queue) {
+     if (queue->out_queue_end < queue->size) {
+       queue->best_rows[queue->out_queue_end] = row_index;
+       queue->top_n_sim_scores[queue->out_queue_end] = sim_score;
+       queue->out_queue_end++;
+     }
+     else {
+       queue->best_rows[queue->worst_in_queue_index] = row_index;
+       queue->top_n_sim_scores[queue->worst_in_queue_index] = sim_score;
+     }
+     /* find new worst_in_queue */
+     queue->worst_in_queue = 0;
+     for (uint64_t output_idx = 0; output_idx < queue->size; output_idx++) {
+       if (queue->top_n_sim_scores[output_idx] > queue->worst_in_queue) {
+         queue->worst_in_queue = queue->top_n_sim_scores[output_idx];
+         queue->worst_in_queue_index = output_idx;
+       }
+     }
+   }
+}
+
+
+
 /*#define EARLY_EXIT*/
 
 #ifndef __builtin_assume_aligned
 #define __builtin_assume_aligned(x, y) (x)
 #endif
 
-/* Seek candidates by looking at first hamming */
-void hamming_top_n_candidates(uint64_t* hashes, uint64_t* query,
-                              uint64_t num_hashes, uint64_t* best_rows,
-                              uint64_t output_len, uint64_t hash_len) {
-    struct TopNQueue queue = create_queue(best_rows);
-    uint64_t sum = 0;
-    for (uint64_t i = 0; i < num_hashes; i++) {
-      sum = popcount((*hashes) ^ (*query));
-      maybe_insert_into_queue(&queue, sum, i, output_len);
-      query += hash_len;
-      hashes += hash_len;
-    }
-}
 
 /* loop unrolled versions of hamming sim computation */
-#define HAMMING_TOP_N_HASH(N, BODY) \
-void hamming_top_n_hash_##N(uint64_t* hashes, uint64_t* query, \
-                            uint64_t num_hashes, uint64_t* best_rows, \
-                            uint64_t output_len) { \
-    struct TopNQueue queue = create_queue(best_rows); \
+#define HAMMING_TOP_N_HASH(N, QUEUE_LEN, BODY) \
+void hamming_top_ ## QUEUE_LEN ## _hash_##N(uint64_t* hashes, uint64_t* query, \
+                                      uint64_t num_hashes, uint64_t* best_rows) { \
+    struct Top ## QUEUE_LEN ## Queue queue = create_ ## QUEUE_LEN ## _queue(best_rows); \
     uint64_t sum = 0; \
+    PyThreadState *_save = NULL; \
+    if (PyGILState_Check()) { _save = PyEval_SaveThread(); } \
     for (uint64_t i = 0; i < num_hashes; i++) { \
       BODY; \
-      maybe_insert_into_queue(&queue, sum, i, output_len); \
+      maybe_insert_into_queue_## QUEUE_LEN (&queue, sum, i); \
     } \
+    if (_save != NULL) { PyEval_RestoreThread(_save); }\
 }
 
 /* 64 bits */
-HAMMING_TOP_N_HASH(1,
+HAMMING_TOP_N_HASH(1, 10,
     sum = popcount((*hashes++) ^ (*query));
 )
 
 /* 128 bits */
-HAMMING_TOP_N_HASH(2,
+HAMMING_TOP_N_HASH(2, 10,
     sum = popcount((*hashes++) ^ (*query));
     sum += popcount((*hashes++) ^ query[1]);
 )
 
 /* 192 bits */
-HAMMING_TOP_N_HASH(3,
+HAMMING_TOP_N_HASH(3, 10,
     sum = popcount((*hashes++) ^ (*query));
     sum += popcount((*hashes++) ^ query[1]);
     sum += popcount((*hashes++) ^ query[2]);
 )
 
 /* 256 bits */
-HAMMING_TOP_N_HASH(4,
+HAMMING_TOP_N_HASH(4, 10,
     sum = popcount((*hashes++) ^ (*query));
     sum += popcount((*hashes++) ^ query[1]);
     sum += popcount((*hashes++) ^ query[2]);
@@ -229,7 +245,7 @@ HAMMING_TOP_N_HASH(4,
 )
 
 /* 320 bits */
-HAMMING_TOP_N_HASH(5,
+HAMMING_TOP_N_HASH(5, 10,
     sum = popcount((*hashes++) ^ (*query));
     sum += popcount((*hashes++) ^ query[1]);
     sum += popcount((*hashes++) ^ query[2]);
@@ -238,7 +254,7 @@ HAMMING_TOP_N_HASH(5,
 )
 
 /* 384 bits */
-HAMMING_TOP_N_HASH(6,
+HAMMING_TOP_N_HASH(6, 10,
     sum = popcount((*hashes++) ^ (*query));
     sum += popcount((*hashes++) ^ query[1]);
     sum += popcount((*hashes++) ^ query[2]);
@@ -248,7 +264,7 @@ HAMMING_TOP_N_HASH(6,
 )
 
 /* 448 bits */
-HAMMING_TOP_N_HASH(7,
+HAMMING_TOP_N_HASH(7, 10,
     sum = popcount((*hashes++) ^ (*query));
     sum += popcount((*hashes++) ^ query[1]);
     sum += popcount((*hashes++) ^ query[2]);
@@ -259,7 +275,7 @@ HAMMING_TOP_N_HASH(7,
 )
 
 /* 512 bits */
-HAMMING_TOP_N_HASH(8,
+HAMMING_TOP_N_HASH(8, 10,
     sum = popcount((*hashes++) ^ (*query));
     sum += popcount((*hashes++) ^ query[1]);
     sum += popcount((*hashes++) ^ query[2]);
@@ -271,7 +287,7 @@ HAMMING_TOP_N_HASH(8,
 )
 
 /* 576 bits */
-HAMMING_TOP_N_HASH(9,
+HAMMING_TOP_N_HASH(9, 10,
     sum = popcount((*hashes++) ^ (*query));
     sum += popcount((*hashes++) ^ query[1]);
     sum += popcount((*hashes++) ^ query[2]);
@@ -284,7 +300,102 @@ HAMMING_TOP_N_HASH(9,
 )
 
 /* 640 bits */
-HAMMING_TOP_N_HASH(10,
+HAMMING_TOP_N_HASH(10, 10,
+    sum = popcount((*hashes++) ^ (*query));
+    sum += popcount((*hashes++) ^ query[1]);
+    sum += popcount((*hashes++) ^ query[2]);
+    sum += popcount((*hashes++) ^ query[3]);
+    sum += popcount((*hashes++) ^ query[4]);
+    sum += popcount((*hashes++) ^ query[5]);
+    sum += popcount((*hashes++) ^ query[6]);
+    sum += popcount((*hashes++) ^ query[7]);
+    sum += popcount((*hashes++) ^ query[8]);
+    sum += popcount((*hashes++) ^ query[9]);
+)
+
+/* 64 bits */
+HAMMING_TOP_N_HASH(1, 1000,
+    sum = popcount((*hashes++) ^ (*query));
+)
+
+/* 128 bits */
+HAMMING_TOP_N_HASH(2, 1000,
+    sum = popcount((*hashes++) ^ (*query));
+    sum += popcount((*hashes++) ^ query[1]);
+)
+
+/* 192 bits */
+HAMMING_TOP_N_HASH(3, 1000,
+    sum = popcount((*hashes++) ^ (*query));
+    sum += popcount((*hashes++) ^ query[1]);
+    sum += popcount((*hashes++) ^ query[2]);
+)
+
+/* 256 bits */
+HAMMING_TOP_N_HASH(4, 1000,
+    sum = popcount((*hashes++) ^ (*query));
+    sum += popcount((*hashes++) ^ query[1]);
+    sum += popcount((*hashes++) ^ query[2]);
+    sum += popcount((*hashes++) ^ query[3]);
+)
+
+/* 320 bits */
+HAMMING_TOP_N_HASH(5, 1000,
+    sum = popcount((*hashes++) ^ (*query));
+    sum += popcount((*hashes++) ^ query[1]);
+    sum += popcount((*hashes++) ^ query[2]);
+    sum += popcount((*hashes++) ^ query[3]);
+    sum += popcount((*hashes++) ^ query[4]);
+)
+
+/* 384 bits */
+HAMMING_TOP_N_HASH(6, 1000,
+    sum = popcount((*hashes++) ^ (*query));
+    sum += popcount((*hashes++) ^ query[1]);
+    sum += popcount((*hashes++) ^ query[2]);
+    sum += popcount((*hashes++) ^ query[3]);
+    sum += popcount((*hashes++) ^ query[4]);
+    sum += popcount((*hashes++) ^ query[5]);
+)
+
+/* 448 bits */
+HAMMING_TOP_N_HASH(7, 1000,
+    sum = popcount((*hashes++) ^ (*query));
+    sum += popcount((*hashes++) ^ query[1]);
+    sum += popcount((*hashes++) ^ query[2]);
+    sum += popcount((*hashes++) ^ query[3]);
+    sum += popcount((*hashes++) ^ query[4]);
+    sum += popcount((*hashes++) ^ query[5]);
+    sum += popcount((*hashes++) ^ query[6]);
+)
+
+/* 512 bits */
+HAMMING_TOP_N_HASH(8, 1000,
+    sum = popcount((*hashes++) ^ (*query));
+    sum += popcount((*hashes++) ^ query[1]);
+    sum += popcount((*hashes++) ^ query[2]);
+    sum += popcount((*hashes++) ^ query[3]);
+    sum += popcount((*hashes++) ^ query[4]);
+    sum += popcount((*hashes++) ^ query[5]);
+    sum += popcount((*hashes++) ^ query[6]);
+    sum += popcount((*hashes++) ^ query[7]);
+)
+
+/* 576 bits */
+HAMMING_TOP_N_HASH(9, 1000,
+    sum = popcount((*hashes++) ^ (*query));
+    sum += popcount((*hashes++) ^ query[1]);
+    sum += popcount((*hashes++) ^ query[2]);
+    sum += popcount((*hashes++) ^ query[3]);
+    sum += popcount((*hashes++) ^ query[4]);
+    sum += popcount((*hashes++) ^ query[5]);
+    sum += popcount((*hashes++) ^ query[6]);
+    sum += popcount((*hashes++) ^ query[7]);
+    sum += popcount((*hashes++) ^ query[8]);
+)
+
+/* 640 bits */
+HAMMING_TOP_N_HASH(10, 1000,
     sum = popcount((*hashes++) ^ (*query));
     sum += popcount((*hashes++) ^ query[1]);
     sum += popcount((*hashes++) ^ query[2]);
@@ -300,9 +411,9 @@ HAMMING_TOP_N_HASH(10,
 
 /* Default not unrolled */
 
-void hamming_top_n_default(uint64_t* hashes, uint64_t* query, uint64_t* query_start,
+void hamming_top_10_default(uint64_t* hashes, uint64_t* query, uint64_t* query_start,
                            uint64_t num_hashes, uint64_t query_len, uint64_t* best_rows) {
-    struct TopNQueue queue = create_queue(best_rows);
+    struct Top10Queue queue = create_10_queue(best_rows);
     uint64_t sum = 0;
 
     for (uint64_t i = 0; i < num_hashes; i++) {
@@ -312,71 +423,114 @@ void hamming_top_n_default(uint64_t* hashes, uint64_t* query, uint64_t* query_st
         for (uint64_t j = 0; j < query_len; j++) {
             sum += popcount((*hashes++) ^ (*query++));
         }
-        maybe_insert_into_queue(&queue, sum, i, 10);
+        maybe_insert_into_queue_10(&queue, sum, i);
     }
 }
 
 
-static void hamming_top_n(char **args, const npy_intp *dimensions,
-                          const npy_intp *steps, void *data)
+static void hamming_top_10(char **args, const npy_intp *dimensions,
+                           const npy_intp *steps, void *data)
 {
 
     /* npy_intp n = dimensions[0]; <<- not sure what this is */
     npy_intp num_hashes = dimensions[1];  /* appears to be size of first dimension */
     npy_intp query_len = dimensions[2];  /* appears to be size of second dimension */
-    const uint64_t output_len = dimensions[3];
     uint64_t *hashes = __builtin_assume_aligned((uint64_t*)args[0], 16);
     uint64_t *query =  __builtin_assume_aligned((uint64_t*)args[1], 16);
     uint64_t *query_start = __builtin_assume_aligned((uint64_t*)args[1], 16);
     uint64_t *best_rows = __builtin_assume_aligned((uint64_t*)args[2], 16);
 
-    uint64_t *candidate_rows = best_rows;
+    switch (query_len) {
+        case 1:
+            hamming_top_10_hash_1(hashes, query, num_hashes, best_rows);
+            break;
+        case 2:
+            hamming_top_10_hash_2(hashes, query, num_hashes, best_rows);
+            break;
+        case 3:
+            hamming_top_10_hash_3(hashes, query, num_hashes, best_rows);
+            break;
+        case 4:
+            hamming_top_10_hash_4(hashes, query, num_hashes, best_rows);
+            break;
+        case 5:
+            hamming_top_10_hash_5(hashes, query, num_hashes, best_rows);
+            break;
+        case 6:
+            hamming_top_10_hash_6(hashes, query, num_hashes, best_rows);
+            break;
+        case 7:
+            hamming_top_10_hash_7(hashes, query, num_hashes, best_rows);
+            break;
+        case 8:
+            hamming_top_10_hash_8(hashes, query, num_hashes, best_rows);
+            break;
+        case 9:
+            hamming_top_10_hash_9(hashes, query, num_hashes, best_rows);
+            break;
+        case 10:  /* start to get diminishing returns -- rolled: 101 unrolled: 111 */
+            hamming_top_10_hash_10(hashes, query, num_hashes, best_rows);
+            break;
+        default:
+            hamming_top_10_default(hashes, query, query_start, num_hashes, query_len, best_rows);
+            break;
+    }
+}
 
-    NPY_BEGIN_ALLOW_THREADS
+
+static void hamming_top_cand(char **args, const npy_intp *dimensions,
+                             const npy_intp *steps, void *data)
+{
+
+    /* npy_intp n = dimensions[0]; <<- not sure what this is */
+    npy_intp num_hashes = dimensions[1];  /* appears to be size of first dimension */
+    npy_intp query_len = dimensions[2];  /* appears to be size of second dimension */
+    npy_intp out_len = dimensions[3];  /* appears to be size of third dimension */
+    uint64_t *hashes = __builtin_assume_aligned((uint64_t*)args[0], 16);
+    uint64_t *query =  __builtin_assume_aligned((uint64_t*)args[1], 16);
+    uint64_t *best_rows = __builtin_assume_aligned((uint64_t*)args[2], 16);
 
     switch (query_len) {
         case 1:
-            hamming_top_n_hash_1(hashes, query, num_hashes, candidate_rows, output_len);
+            hamming_top_1000_hash_1(hashes, query, num_hashes, best_rows);
             break;
         case 2:
-            hamming_top_n_hash_2(hashes, query, num_hashes, candidate_rows, output_len);
+            hamming_top_1000_hash_2(hashes, query, num_hashes, best_rows);
             break;
         case 3:
-            hamming_top_n_hash_3(hashes, query, num_hashes, candidate_rows, output_len);
+            hamming_top_1000_hash_3(hashes, query, num_hashes, best_rows);
             break;
         case 4:
-            hamming_top_n_hash_4(hashes, query, num_hashes, candidate_rows, output_len);
+            hamming_top_1000_hash_4(hashes, query, num_hashes, best_rows);
             break;
         case 5:
-            hamming_top_n_hash_5(hashes, query, num_hashes, candidate_rows, output_len);
+            hamming_top_1000_hash_5(hashes, query, num_hashes, best_rows);
             break;
         case 6:
-            hamming_top_n_hash_6(hashes, query, num_hashes, candidate_rows, output_len);
+            hamming_top_1000_hash_6(hashes, query, num_hashes, best_rows);
             break;
         case 7:
-            hamming_top_n_hash_7(hashes, query, num_hashes, candidate_rows, output_len);
+            hamming_top_1000_hash_7(hashes, query, num_hashes, best_rows);
             break;
         case 8:
-            hamming_top_n_hash_8(hashes, query, num_hashes, candidate_rows, output_len);
+            hamming_top_1000_hash_8(hashes, query, num_hashes, best_rows);
             break;
         case 9:
-            hamming_top_n_hash_9(hashes, query, num_hashes, candidate_rows, output_len);
+            hamming_top_1000_hash_9(hashes, query, num_hashes, best_rows);
             break;
         case 10:  /* start to get diminishing returns -- rolled: 101 unrolled: 111 */
-            hamming_top_n_hash_10(hashes, query, num_hashes, best_rows, output_len);
+            hamming_top_1000_hash_10(hashes, query, num_hashes, best_rows);
             break;
         default:
-            hamming_top_n_default(hashes, query, query_start, num_hashes, query_len, best_rows);
             break;
     }
-    NPY_END_ALLOW_THREADS
 }
 
 /*This a pointer to the above function*/
 PyUFuncGenericFunction funcs[1] = {&unshared_bits};
 PyUFuncGenericFunction hamming_funcs[1] = {&hamming};
-PyUFuncGenericFunction hamming_10_funcs[1] = {&hamming_top_n};
-PyUFuncGenericFunction hamming_cand_funcs[1] = {&hamming_top_n};
+PyUFuncGenericFunction hamming_10_funcs[1] = {&hamming_top_10};
+PyUFuncGenericFunction hamming_cand_funcs[1] = {&hamming_top_cand};
 
 /* These are the input and return dtypes of logit.*/
 
@@ -436,8 +590,8 @@ PyMODINIT_FUNC PyInit_ufuncs(void)
 
     hamming_cand_ufunc = PyUFunc_FromFuncAndDataAndSignature(hamming_cand_funcs, NULL, hamming_types, 1, 2, 1,
                                                             PyUFunc_None, "hamming_top_cand",
-                                                            "Gets the top 100 hashes by hamming similarity", 0,
-                                                            "(m,n),(n)->(100)");
+                                                            "Gets the top 1000 hashes by hamming similarity", 0,
+                                                            "(m,n),(n)->(1000)");
     if (hamming_cand_ufunc == NULL) {
         printf("hamming_n_ufunc is NULL!!\n");
     }
