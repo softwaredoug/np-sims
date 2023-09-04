@@ -209,13 +209,10 @@ void hamming_top_ ## QUEUE_LEN ## _hash_##N(uint64_t* hashes, uint64_t* query, \
                                       uint64_t num_hashes, uint64_t* best_rows) { \
     struct Top ## QUEUE_LEN ## Queue queue = create_ ## QUEUE_LEN ## _queue(best_rows); \
     uint64_t sum = 0; \
-    PyThreadState *_save = NULL; \
-    if (PyGILState_Check()) { _save = PyEval_SaveThread(); } \
     for (uint64_t i = 0; i < num_hashes; i++) { \
       BODY; \
       maybe_insert_into_queue_## QUEUE_LEN (&queue, sum, i); \
     } \
-    if (_save != NULL) { PyEval_RestoreThread(_save); }\
 }
 
 /* 64 bits */
@@ -440,6 +437,9 @@ static void hamming_top_10(char **args, const npy_intp *dimensions,
     uint64_t *query_start = __builtin_assume_aligned((uint64_t*)args[1], 16);
     uint64_t *best_rows = __builtin_assume_aligned((uint64_t*)args[2], 16);
 
+    PyThreadState *_save = NULL;
+    if (PyGILState_Check()) { _save = PyEval_SaveThread(); }
+
     switch (query_len) {
         case 1:
             hamming_top_10_hash_1(hashes, query, num_hashes, best_rows);
@@ -475,6 +475,8 @@ static void hamming_top_10(char **args, const npy_intp *dimensions,
             hamming_top_10_default(hashes, query, query_start, num_hashes, query_len, best_rows);
             break;
     }
+
+    if (_save != NULL) { PyEval_RestoreThread(_save); }
 }
 
 
@@ -489,6 +491,9 @@ static void hamming_top_cand(char **args, const npy_intp *dimensions,
     uint64_t *hashes = __builtin_assume_aligned((uint64_t*)args[0], 16);
     uint64_t *query =  __builtin_assume_aligned((uint64_t*)args[1], 16);
     uint64_t *best_rows = __builtin_assume_aligned((uint64_t*)args[2], 16);
+
+    PyThreadState *_save = NULL;
+    if (PyGILState_Check()) { _save = PyEval_SaveThread(); }
 
     switch (query_len) {
         case 1:
@@ -524,6 +529,8 @@ static void hamming_top_cand(char **args, const npy_intp *dimensions,
         default:
             break;
     }
+
+    if (_save != NULL) { PyEval_RestoreThread(_save); }
 }
 
 /*This a pointer to the above function*/

@@ -347,7 +347,7 @@ if __name__ == "__main__":
 # 2560 projections -- QPS 81.02739932963804 -- Recall 0.6396999999999985
 #
 # -------------------------------
-# Using SIMD
+# Using SIMD (dropped)
 # Algo: lsh_pure_c_64 -- QPS 2550.8807669409057 -- Recall 0.1380999999999981
 # Algo: lsh_pure_c_128 -- QPS 1585.288417006297 -- Recall 0.1870999999999977
 # Algo: lsh_pure_c_256 -- QPS 830.3471393242446 -- Recall 0.27399999999999886
