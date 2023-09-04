@@ -146,7 +146,7 @@ def get_test_algorithms(cmd_args):
             raise ValueError(f"Unknown algorithm: {query_method}")
 
 
-def benchmark(terms, vectors, query_fn, workers, debug=False, num_queries=1000):
+def benchmark(terms, vectors, query_fn, workers, debug=False, num_queries=50):
 
     # Randomly select N terms
     query_idxs = np.random.randint(0, len(terms), size=num_queries)

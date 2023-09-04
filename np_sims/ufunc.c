@@ -7,10 +7,6 @@
 #include <math.h>
 #include <stdio.h>
 
-#if defined(__arm__) || defined(__aarch64__)
-#include <arm_neon.h>
-#endif
-
 #ifdef _MSC_VER
 #  include <intrin.h>   // for __popcnt
 #endif
@@ -111,35 +107,103 @@ static void hamming(char **args, const npy_intp *dimensions,
 }
 
 const uint64_t N = 10;
+const uint64_t NUM_CANDIDATES = 10;
 
 
 struct TopNQueue {
     uint64_t out_queue_end;
-    uint64_t top_n_sim_scores[10];
+    uint64_t top_n_sim_scores[N];
     uint64_t worst_in_queue;
     uint64_t worst_in_queue_index;
 
     uint64_t* best_rows;
 };
 
-const struct TopNQueue defaults = {
+struct CandidateQueue {
+    uint64_t out_queue_end;
+    uint64_t top_n_sim_scores[NUM_CANDIDATES];
+    uint64_t* top_n_hashes;
+
+    uint64_t worst_in_queue;
+    uint64_t worst_in_queue_index;
+
+    uint64_t* best_rows;
+};
+
+const struct TopNQueue topn_defaults = {
     .out_queue_end = 0,
-    .top_n_sim_scores = {UINT64_MAX, UINT64_MAX, UINT64_MAX, UINT64_MAX, UINT64_MAX,
-                         UINT64_MAX, UINT64_MAX, UINT64_MAX, UINT64_MAX, UINT64_MAX},
+    .top_n_sim_scores = {UINT64_MAX},
     .best_rows = NULL,
     .worst_in_queue = UINT64_MAX,
     .worst_in_queue_index = 0
 };
 
 
-struct TopNQueue create_queue(uint64_t* best_rows) {
-    struct TopNQueue queue = defaults;
+const struct CandidateQueue cand_defaults = {
+    .out_queue_end = 0,
+    .top_n_sim_scores = {UINT64_MAX},
+    .best_rows = NULL,
+    .top_n_hashes = NULL,
+    .worst_in_queue = UINT64_MAX,
+    .worst_in_queue_index = 0
+};
+
+struct TopNQueue create_topn_queue(uint64_t* best_rows) {
+    struct TopNQueue queue = topn_defaults;
     queue.best_rows = best_rows;
-    /* Initialize to UINT64_MAX*/
-    for (uint64_t i = 0; i < N; i++) {
-        best_rows[i] = UINT64_MAX;
-    }
     return queue;
+}
+
+struct CandidateQueue create_candidate_queue(uint64_t* best_rows, uint64_t query_len) {
+    struct CandidateQueue queue = cand_defaults;
+    queue.best_rows = best_rows;
+    /*printf("!! Allocating %llu bytes for top_n_hashes\n", sizeof(uint64_t) * NUM_CANDIDATES * query_len);*/
+    queue.top_n_hashes = malloc(sizeof(uint64_t) * NUM_CANDIDATES * query_len);
+    return queue;
+}
+
+void free_candidate_queue(struct CandidateQueue* queue) {
+    free(queue->top_n_hashes);
+}
+
+
+void maybe_insert_as_cand(struct CandidateQueue* queue, uint64_t sim_score,
+                          uint64_t* hashes,
+                          uint64_t row_index,
+                          uint64_t queue_len,
+                          uint64_t hash_len) {
+   if (sim_score < queue->worst_in_queue) {
+     if (queue->out_queue_end < queue_len) {
+       queue->best_rows[queue->out_queue_end] = row_index;
+       queue->top_n_sim_scores[queue->out_queue_end] = sim_score;
+       /*printf("!1 Inserting into queue at index %llu\n", queue->out_queue_end);
+       printf("!1 hash_len: %llu\n", hash_len);
+       printf("------------------------------------\n");*/
+
+       memcpy(queue->top_n_hashes + (queue->out_queue_end * hash_len),
+              hashes,
+              sizeof(uint64_t) * hash_len);
+       queue->out_queue_end++;
+     }
+     else {
+       queue->best_rows[queue->worst_in_queue_index] = row_index;
+       queue->top_n_sim_scores[queue->worst_in_queue_index] = sim_score;
+       /*printf("!2 Inserting into queue at index %llu\n", queue->worst_in_queue_index);
+       printf("!2 hash_len: %llu\n", hash_len);
+       printf("------------------------------------\n");*/
+       memcpy(queue->top_n_hashes + (queue->worst_in_queue_index * hash_len),
+              hashes,
+              sizeof(uint64_t) * hash_len);
+     }
+     /* find new worst_in_queue */
+     queue->worst_in_queue = 0;
+     for (uint64_t output_idx = 0; output_idx < queue_len; output_idx++) {
+       if (queue->top_n_sim_scores[output_idx] > queue->worst_in_queue) {
+         queue->worst_in_queue = queue->top_n_sim_scores[output_idx];
+         queue->worst_in_queue_index = output_idx;
+       }
+     }
+   }
 }
 
 /*
@@ -179,16 +243,27 @@ inline void maybe_insert_into_queue(struct TopNQueue* queue, uint64_t sim_score,
 #define __builtin_assume_aligned(x, y) (x)
 #endif
 
-/* Seek candidates by looking at first hamming */
-void hamming_top_n_candidates(uint64_t* hashes, uint64_t* query,
-                              uint64_t num_hashes, uint64_t* best_rows,
-                              uint64_t output_len, uint64_t hash_len) {
-    struct TopNQueue queue = create_queue(best_rows);
+/* Seek candidates by looking at first hamming
+ *
+ * Give query
+ *
+ * Q0 Q1 .. QN
+ *
+ * Given hashes
+ *
+ * A0 A1 .. AN
+ * B0 B1 .. BN
+ *
+ * We want just A0, B0, etc XOR'd with Q0
+ *
+ * */
+void hamming_candidates(uint64_t* hashes, uint64_t* query,
+                        uint64_t num_hashes, struct CandidateQueue* queue,
+                        uint64_t hash_len) {
     uint64_t sum = 0;
     for (uint64_t i = 0; i < num_hashes; i++) {
       sum = popcount((*hashes) ^ (*query));
-      maybe_insert_into_queue(&queue, sum, i, output_len);
-      query += hash_len;
+      maybe_insert_as_cand(queue, sum, hashes, i, NUM_CANDIDATES, hash_len);
       hashes += hash_len;
     }
 }
@@ -198,7 +273,7 @@ void hamming_top_n_candidates(uint64_t* hashes, uint64_t* query,
 void hamming_top_n_hash_##N(uint64_t* hashes, uint64_t* query, \
                             uint64_t num_hashes, uint64_t* best_rows, \
                             uint64_t output_len) { \
-    struct TopNQueue queue = create_queue(best_rows); \
+    struct TopNQueue queue = create_topn_queue(best_rows); \
     uint64_t sum = 0; \
     for (uint64_t i = 0; i < num_hashes; i++) { \
       BODY; \
@@ -306,7 +381,7 @@ HAMMING_TOP_N_HASH(10,
 
 void hamming_top_n_default(uint64_t* hashes, uint64_t* query, uint64_t* query_start,
                            uint64_t num_hashes, uint64_t query_len, uint64_t* best_rows) {
-    struct TopNQueue queue = create_queue(best_rows);
+    struct TopNQueue queue = create_topn_queue(best_rows);
     uint64_t sum = 0;
 
     for (uint64_t i = 0; i < num_hashes; i++) {
@@ -321,285 +396,10 @@ void hamming_top_n_default(uint64_t* hashes, uint64_t* query, uint64_t* query_st
 }
 
 
-/* Neon SIMD implementations */
-
-#if defined(__ARM_NEON) || defined(__ARM_NEON__)
-
-inline uint16x8_t simd_popcount(uint64x2_t h, uint64x2_t q) {
-    return  vpaddlq_u8(    /* Get as 16 bit - so we can accumulate without overflow */
-                vcntq_u8(        /* Popcount each byte  -> bytes with their popcount */
-                  vreinterpretq_u8_u64(veorq_u64(h, q)
-                )
-    ));
-}
-
-
-void hamming_top_n_simd_2(uint64_t* hashes, uint64_t* query,
-                          uint64_t num_hashes,
-                          uint64_t* best_rows, uint64_t output_len) {
-  struct TopNQueue queue = create_queue(best_rows);
-
-  /* Load query into registers */
-  uint64x2_t q0 = vld1q_u64(query);
-
-  for (uint64_t i = 0; i < num_hashes; i++) {
-    /* current hashes into registers */
-    uint64x2_t h0 = vld1q_u64(hashes);
-
-    maybe_insert_into_queue(&queue,
-                            vaddvq_s16(simd_popcount(h0, q0)),
-                            i,
-                            output_len);
-    hashes += 2;
-  }
-}
-
-void hamming_top_n_simd_4(uint64_t* hashes, uint64_t* query,
-                          uint64_t num_hashes,
-                          uint64_t* best_rows, uint64_t output_len) {
-  struct TopNQueue queue = create_queue(best_rows);
-
-  /* Load query into registers */
-  uint64x2_t q0 = vld1q_u64(query);
-  uint64x2_t q1 = vld1q_u64(&query[2]);
-
-  for (uint64_t i = 0; i < num_hashes; i++) {
-    /* current hashes into registers */
-    uint64x2_t h0 = vld1q_u64(hashes);
-    uint64x2_t h1 = vld1q_u64(&hashes[2]);
-
-    maybe_insert_into_queue(&queue,
-                            vaddvq_s16(vaddq_u16(simd_popcount(h0, q0), simd_popcount(h1, q1))),
-                            i,
-                            output_len);
-    hashes += 4;
-  }
-}
-
-void hamming_top_n_simd_8(uint64_t* hashes, uint64_t* query,
-                          uint64_t num_hashes,
-                          uint64_t* best_rows, uint64_t output_len) {
-  struct TopNQueue queue = create_queue(best_rows);
-
-  /* Load query into registers */
-  uint64x2_t q0 = vld1q_u64(query);
-  uint64x2_t q1 = vld1q_u64(&query[2]);
-  uint64x2_t q2 = vld1q_u64(&query[4]);
-  uint64x2_t q3 = vld1q_u64(&query[6]);
-  uint16x8_t sum0;
-
-  for (uint64_t i = 0; i < num_hashes; i++) {
-
-    /* current hashes into registers */
-    uint64x2_t h0 = vld1q_u64(hashes);
-    uint64x2_t h1 = vld1q_u64(&hashes[2]);
-    uint64x2_t h2 = vld1q_u64(&hashes[4]);
-    uint64x2_t h3 = vld1q_u64(&hashes[6]);
-
-    sum0 = simd_popcount(h0, q0);
-    sum0 = vaddq_u16(sum0, simd_popcount(h1, q1));
-    sum0 = vaddq_u16(sum0, simd_popcount(h2, q2));
-    sum0 = vaddq_u16(sum0, simd_popcount(h3, q3));
-
-    maybe_insert_into_queue(&queue,
-                            vaddvq_s16(sum0),
-                            i,
-                            output_len);
-    hashes += 8;
-  }
-}
-
-void hamming_top_n_simd_10(uint64_t* hashes, uint64_t* query,
-                           uint64_t num_hashes,
-                           uint64_t* best_rows, uint64_t output_len) {
-  struct TopNQueue queue = create_queue(best_rows);
-
-  /* Load query into registers */
-  uint64x2_t q0 = vld1q_u64(query);
-  uint64x2_t q1 = vld1q_u64(&query[2]);
-  uint64x2_t q2 = vld1q_u64(&query[4]);
-  uint64x2_t q3 = vld1q_u64(&query[6]);
-  uint64x2_t q4 = vld1q_u64(&query[8]);
-  uint16x8_t sum0;
-
-  for (uint64_t i = 0; i < num_hashes; i++) {
-
-    /* current hashes into registers */
-    uint64x2_t h0 = vld1q_u64(hashes);
-    uint64x2_t h1 = vld1q_u64(&hashes[2]);
-    uint64x2_t h2 = vld1q_u64(&hashes[4]);
-    uint64x2_t h3 = vld1q_u64(&hashes[6]);
-    uint64x2_t h4 = vld1q_u64(&hashes[8]);
-
-    sum0 = simd_popcount(h0, q0);
-    sum0 = vaddq_u16(sum0, simd_popcount(h1, q1));
-    sum0 = vaddq_u16(sum0, simd_popcount(h2, q2));
-    sum0 = vaddq_u16(sum0, simd_popcount(h3, q3));
-    sum0 = vaddq_u16(sum0, simd_popcount(h4, q4));
-
-    maybe_insert_into_queue(&queue,
-                            vaddvq_s16(sum0),
-                            i,
-                            10);
-    hashes += 10;
-  }
-}
-
-
-/* Unrolled with 40 64 bit hashes, 20 128 bit hashes
- *
- * Performance is only 32.5 QPS, so not worth it
- *
- * */
-void hamming_top_n_simd_40(uint64_t* hashes, uint64_t* query,
-                           uint64_t num_hashes,
-                           uint64_t* best_rows, uint64_t output_len) {
-  struct TopNQueue queue = create_queue(best_rows);
-
-  /* Load query into registers */
-  uint64x2_t q0 = vld1q_u64(query);
-  uint64x2_t q1 = vld1q_u64(&query[2]);
-  uint64x2_t q2 = vld1q_u64(&query[4]);
-  uint64x2_t q3 = vld1q_u64(&query[6]);
-  uint64x2_t q4 = vld1q_u64(&query[8]);
-  uint64x2_t q5 = vld1q_u64(&query[10]);
-  uint64x2_t q6 = vld1q_u64(&query[12]);
-  uint64x2_t q7 = vld1q_u64(&query[14]);
-  uint64x2_t q8 = vld1q_u64(&query[16]);
-  uint64x2_t q9 = vld1q_u64(&query[18]);
-  uint64x2_t q10 = vld1q_u64(&query[20]);
-  uint64x2_t q11 = vld1q_u64(&query[22]);
-  uint64x2_t q12 = vld1q_u64(&query[24]);
-  uint64x2_t q13 = vld1q_u64(&query[26]);
-  uint64x2_t q14 = vld1q_u64(&query[28]);
-  uint64x2_t q15 = vld1q_u64(&query[30]);
-  uint64x2_t q16 = vld1q_u64(&query[32]);
-  uint64x2_t q17 = vld1q_u64(&query[34]);
-  uint64x2_t q18 = vld1q_u64(&query[36]);
-  uint64x2_t q19 = vld1q_u64(&query[38]);
-
-  /* accumulate register */
-
-  uint16x8_t sum0;
-  for (uint64_t i = 0; i < num_hashes; i++) {
-    /* current hashes into registers */
-    uint64x2_t h0 = vld1q_u64(hashes);
-    uint64x2_t h1 = vld1q_u64(&hashes[2]);
-    uint64x2_t h2 = vld1q_u64(&hashes[4]);
-    uint64x2_t h3 = vld1q_u64(&hashes[6]);
-    uint64x2_t h4 = vld1q_u64(&hashes[8]);
-    uint64x2_t h5 = vld1q_u64(&hashes[10]);
-    uint64x2_t h6 = vld1q_u64(&hashes[12]);
-    uint64x2_t h7 = vld1q_u64(&hashes[14]);
-    uint64x2_t h8 = vld1q_u64(&hashes[16]);
-    uint64x2_t h9 = vld1q_u64(&hashes[18]);
-    uint64x2_t h10 = vld1q_u64(&hashes[20]);
-    uint64x2_t h11 = vld1q_u64(&hashes[22]);
-    uint64x2_t h12 = vld1q_u64(&hashes[24]);
-    uint64x2_t h13 = vld1q_u64(&hashes[26]);
-    uint64x2_t h14 = vld1q_u64(&hashes[28]);
-    uint64x2_t h15 = vld1q_u64(&hashes[30]);
-    uint64x2_t h16 = vld1q_u64(&hashes[32]);
-    uint64x2_t h17 = vld1q_u64(&hashes[34]);
-    uint64x2_t h18 = vld1q_u64(&hashes[36]);
-    uint64x2_t h19 = vld1q_u64(&hashes[38]);
-
-    hashes += 40;
-
-    /* XOR, popcount, then sum to sum registers */
-    /* Dump popcount for debugging */
-    sum0 = simd_popcount(h0, q0);
-    sum0 = vaddq_u16(sum0, simd_popcount(h1, q1));
-    sum0 = vaddq_u16(sum0, simd_popcount(h2, q2));
-    sum0 = vaddq_u16(sum0, simd_popcount(h3, q3));
-    sum0 = vaddq_u16(sum0, simd_popcount(h4, q4));
-    sum0 = vaddq_u16(sum0, simd_popcount(h5, q5));
-    sum0 = vaddq_u16(sum0, simd_popcount(h6, q6));
-    sum0 = vaddq_u16(sum0, simd_popcount(h7, q7));
-    sum0 = vaddq_u16(sum0, simd_popcount(h8, q8));
-    sum0 = vaddq_u16(sum0, simd_popcount(h9, q9));
-    sum0 = vaddq_u16(sum0, simd_popcount(h10, q10));
-    sum0 = vaddq_u16(sum0, simd_popcount(h11, q11));
-    sum0 = vaddq_u16(sum0, simd_popcount(h12, q12));
-    sum0 = vaddq_u16(sum0, simd_popcount(h13, q13));
-    sum0 = vaddq_u16(sum0, simd_popcount(h14, q14));
-    sum0 = vaddq_u16(sum0, simd_popcount(h15, q15));
-    sum0 = vaddq_u16(sum0, simd_popcount(h16, q16));
-    sum0 = vaddq_u16(sum0, simd_popcount(h17, q17));
-    sum0 = vaddq_u16(sum0, simd_popcount(h18, q18));
-    sum0 = vaddq_u16(sum0, simd_popcount(h19, q19));
-
-
-    maybe_insert_into_queue(&queue,
-                            vaddvq_s16(sum0),
-                            i,
-                            output_len);
-  }
-
-}
-
-
-/*
- * Fastest simd thusfar, though it seems to have a bug as it doesn't get
- * same recall as the non-simd version.
- */
-void hamming_top_n_default_simd(uint64_t* hashes, uint64_t* query, uint64_t* query_start,
-                                uint64_t num_hashes, uint64_t query_len, uint64_t* best_rows) {
-    struct TopNQueue queue = create_queue(best_rows);
-    uint64x2_t sum = {0, 0};
-
-    /* Fail if hashes are odd */
-    if (query_len % 2 != 0) {
-        return;
-    }
-
-    for (uint64_t i = 0; i < num_hashes; i++) {
-        sum = vdupq_n_u64(0);
-        query = query_start;
-        for (uint64_t j = 0; j < query_len; j+=2) {
-            /* Load into Neon registers */
-            uint64x2_t q = vld1q_u64(query);
-            uint64x2_t h = vld1q_u64(hashes);
-            /* XOR */
-            uint64x2_t x = veorq_u64(q, h);
-            /* Popcount */
-            uint8x16_t p = vcntq_u8(vreinterpretq_u8_u64(x));
-            /* Get sum of each pop count byte */
-            uint64x2_t s = vpaddlq_u8(p);
-
-            /* Add to sum */
-            sum = vaddq_u64(sum, s);
-
-            /* Get the lower uint64 */
-            /*uint64x1_t s1 = vget_low_u64(s);*/
-
-            query += 2;
-            hashes += 2;
-        }
-        /* Only add ot output if its better than nth_so_far. We don't care about sorting*/
-        maybe_insert_into_queue(&queue,
-                                vgetq_lane_u64(sum, 0) + vgetq_lane_u64(sum, 1),
-                                i, 10);
-    }
-}
-
-#else
-#define hamming_top_n_simd_2 hamming_top_n_hash_2
-#define hamming_top_n_simd_4 hamming_top_n_hash_4
-#define hamming_top_n_simd_8 hamming_top_n_hash_8
-#define hamming_top_n_simd_10 hamming_top_n_hash_10
-inline void hamming_top_n_simd_40(uint64_t* hashes, uint64_t* query,
-                                  uint64_t num_hashes, uint64_t* best_rows,
-                                  uint64_t output_len) {
-  uint64_t* query_start = query;
-  hamming_top_n_default(hashes, query, query_start, num_hashes, 40, best_rows);
-}
-#endif
-
-
 static void hamming_top_n(char **args, const npy_intp *dimensions,
                           const npy_intp *steps, void *data)
 {
+  return;
 
     /* npy_intp n = dimensions[0]; <<- not sure what this is */
     npy_intp num_hashes = dimensions[1];  /* appears to be size of first dimension */
@@ -610,49 +410,57 @@ static void hamming_top_n(char **args, const npy_intp *dimensions,
     uint64_t *query_start = __builtin_assume_aligned((uint64_t*)args[1], 16);
     uint64_t *best_rows = __builtin_assume_aligned((uint64_t*)args[2], 16);
 
-    uint64_t *candidate_rows = best_rows;
+    uint64_t candidate_rows[NUM_CANDIDATES] = {0};
 
+
+    /* It seems its best to malloc / free before saving the threadstate? */
+    struct CandidateQueue queue; /* = create_candidate_queue(candidate_rows, query_len);*/
     NPY_BEGIN_ALLOW_THREADS
+    NPY_END_ALLOW_THREADS
+    return;
+
+    /*hamming_candidates(hashes, query, num_hashes, &queue, query_len);*/
 
     switch (query_len) {
         case 1:
-            hamming_top_n_hash_1(hashes, query, num_hashes, candidate_rows, output_len);
+            hamming_top_n_hash_1(queue.top_n_hashes, query, NUM_CANDIDATES,
+                                 best_rows, output_len);
             break;
         case 2:
-            hamming_top_n_simd_2(hashes, query, num_hashes, candidate_rows, output_len);
+            hamming_top_n_hash_2(queue.top_n_hashes, query, NUM_CANDIDATES,
+                                 best_rows, output_len);
             break;
         case 3:
-            hamming_top_n_hash_3(hashes, query, num_hashes, candidate_rows, output_len);
+            hamming_top_n_hash_3(queue.top_n_hashes, query, NUM_CANDIDATES,
+                                 best_rows, output_len);
             break;
         case 4:
-            hamming_top_n_simd_4(hashes, query, num_hashes, candidate_rows, output_len);
+            hamming_top_n_hash_4(queue.top_n_hashes, query, NUM_CANDIDATES, best_rows, output_len);
             break;
         case 5:
-            hamming_top_n_hash_5(hashes, query, num_hashes, candidate_rows, output_len);
+            hamming_top_n_hash_5(queue.top_n_hashes, query, NUM_CANDIDATES, best_rows, output_len);
             break;
         case 6:
-            hamming_top_n_hash_6(hashes, query, num_hashes, candidate_rows, output_len);
+            hamming_top_n_hash_6(queue.top_n_hashes, query, NUM_CANDIDATES, best_rows, output_len);
             break;
         case 7:
-            hamming_top_n_hash_7(hashes, query, num_hashes, candidate_rows, output_len);
+            hamming_top_n_hash_7(queue.top_n_hashes, query, NUM_CANDIDATES, best_rows, output_len);
             break;
         case 8:
-            hamming_top_n_simd_8(hashes, query, num_hashes, candidate_rows, output_len);
+            hamming_top_n_hash_8(queue.top_n_hashes, query, NUM_CANDIDATES, best_rows, output_len);
             break;
         case 9:
-            hamming_top_n_hash_9(hashes, query, num_hashes, candidate_rows, output_len);
+            hamming_top_n_hash_9(queue.top_n_hashes, query, NUM_CANDIDATES, best_rows, output_len);
             break;
         case 10:  /* start to get diminishing returns -- rolled: 101 unrolled: 111 */
-            hamming_top_n_hash_10(hashes, query, num_hashes, best_rows, output_len);
-            break;
-        case 40:
-            hamming_top_n_simd_40(hashes, query, num_hashes, best_rows, output_len);
+            hamming_top_n_hash_10(queue.top_n_hashes, query, NUM_CANDIDATES, best_rows, output_len);
             break;
         default:
-            hamming_top_n_default(hashes, query, query_start, num_hashes, query_len, best_rows);
+            /*hamming_top_n_default(queue.top_n_hashes, query, query_start,
+                                    NUM_CANDIDATES, query_len, best_rows);*/
             break;
     }
-    NPY_END_ALLOW_THREADS
+    /*free_candidate_queue(&queue);*/
 }
 
 /*This a pointer to the above function*/
