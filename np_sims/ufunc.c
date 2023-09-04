@@ -111,7 +111,7 @@ const uint64_t N = 10;
 
 struct TopNQueue {
     uint64_t out_queue_end;
-    uint64_t top_n_sim_scores[10];
+    uint64_t top_n_sim_scores[100];
     uint64_t worst_in_queue;
     uint64_t worst_in_queue_index;
 
@@ -324,7 +324,7 @@ static void hamming_top_n(char **args, const npy_intp *dimensions,
     /* npy_intp n = dimensions[0]; <<- not sure what this is */
     npy_intp num_hashes = dimensions[1];  /* appears to be size of first dimension */
     npy_intp query_len = dimensions[2];  /* appears to be size of second dimension */
-    const uint64_t output_len = N;
+    const uint64_t output_len = dimensions[3];
     uint64_t *hashes = __builtin_assume_aligned((uint64_t*)args[0], 16);
     uint64_t *query =  __builtin_assume_aligned((uint64_t*)args[1], 16);
     uint64_t *query_start = __builtin_assume_aligned((uint64_t*)args[1], 16);
@@ -375,7 +375,8 @@ static void hamming_top_n(char **args, const npy_intp *dimensions,
 /*This a pointer to the above function*/
 PyUFuncGenericFunction funcs[1] = {&unshared_bits};
 PyUFuncGenericFunction hamming_funcs[1] = {&hamming};
-PyUFuncGenericFunction hamming_n_funcs[1] = {&hamming_top_n};
+PyUFuncGenericFunction hamming_10_funcs[1] = {&hamming_top_n};
+PyUFuncGenericFunction hamming_cand_funcs[1] = {&hamming_top_n};
 
 /* These are the input and return dtypes of logit.*/
 
@@ -399,7 +400,7 @@ static struct PyModuleDef moduledef = {
 
 PyMODINIT_FUNC PyInit_ufuncs(void)
 {
-    PyObject *m, *num_unshared, *hamming_ufunc, *hamming_n_ufunc, *d;
+    PyObject *m, *num_unshared, *hamming_ufunc, *hamming_10_ufunc, *hamming_cand_ufunc, *d;
 
     import_array();
     import_umath();
@@ -425,18 +426,27 @@ PyMODINIT_FUNC PyInit_ufuncs(void)
         printf("hamming_ufunc is NULL!!\n");
     }
 
-    hamming_n_ufunc = PyUFunc_FromFuncAndDataAndSignature(hamming_n_funcs, NULL, hamming_types, 1, 2, 1,
-                                                          PyUFunc_None, "hamming_top_n",
-                                                          "Gets the top 10 hashes by hamming similarity", 0,
-                                                          "(m,n),(n)->(10)");
-    if (hamming_n_ufunc == NULL) {
+    hamming_10_ufunc = PyUFunc_FromFuncAndDataAndSignature(hamming_10_funcs, NULL, hamming_types, 1, 2, 1,
+                                                           PyUFunc_None, "hamming_top_10",
+                                                           "Gets the top 10 hashes by hamming similarity", 0,
+                                                           "(m,n),(n)->(10)");
+    if (hamming_10_ufunc == NULL) {
+        printf("hamming_n_ufunc is NULL!!\n");
+    }
+
+    hamming_cand_ufunc = PyUFunc_FromFuncAndDataAndSignature(hamming_cand_funcs, NULL, hamming_types, 1, 2, 1,
+                                                            PyUFunc_None, "hamming_top_cand",
+                                                            "Gets the top 100 hashes by hamming similarity", 0,
+                                                            "(m,n),(n)->(100)");
+    if (hamming_cand_ufunc == NULL) {
         printf("hamming_n_ufunc is NULL!!\n");
     }
     d = PyModule_GetDict(m);
 
     PyDict_SetItemString(d, "num_unshared_bits", num_unshared);
     PyDict_SetItemString(d, "hamming", hamming_ufunc);
-    PyDict_SetItemString(d, "hamming_top_n", hamming_n_ufunc);
+    PyDict_SetItemString(d, "hamming_top_10", hamming_10_ufunc);
+    PyDict_SetItemString(d, "hamming_top_cand", hamming_cand_ufunc);
     Py_DECREF(num_unshared);
     Py_DECREF(hamming_ufunc);
 

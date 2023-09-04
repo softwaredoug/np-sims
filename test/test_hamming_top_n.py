@@ -2,7 +2,7 @@ import pytest
 from typing import List
 
 import numpy as np
-from np_sims import hamming_top_n
+from np_sims import hamming_top_10
 
 
 def same_elements(a, b):
@@ -168,6 +168,6 @@ hamming_tests = [
 
 @pytest.mark.parametrize("hashes, query, expected", hamming_tests)
 def test_hamming_top_n(hashes, query, expected):
-    result = hamming_top_n(np.array(hashes, dtype=np.uint64),
-                           np.array(query, dtype=np.uint64))
+    result = hamming_top_10(np.array(hashes, dtype=np.uint64),
+                            np.array(query, dtype=np.uint64))
     assert same_elements(result, expected)
