@@ -162,7 +162,8 @@ def get_test_algorithms(cmd_args):
             raise ValueError(f"Unknown algorithm: {query_method}")
 
 
-def benchmark(terms, vectors, query_fn, workers, debug=False, num_queries=50):
+def benchmark(terms, vectors, query_fn, workers,
+              debug=False, ground_truth=False, num_queries=50):
 
     # Randomly select N terms
     query_idxs = np.random.randint(0, len(terms), size=num_queries)
@@ -172,7 +173,11 @@ def benchmark(terms, vectors, query_fn, workers, debug=False, num_queries=50):
     gt_time = 0
     results_gt = {}
     for query_idx in query_idxs:
-        result, sims = most_similar_cos(vectors, query_idx)
+        if ground_truth:
+            result, sims = most_similar_cos(vectors, query_idx)
+        else:
+            result = np.array([0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
+            sims = [0] * 10
         gt_time += (perf_counter() - gt_start)
         results_gt[query_idx] = list(zip(result, sims))
 
@@ -231,14 +236,14 @@ def benchmark(terms, vectors, query_fn, workers, debug=False, num_queries=50):
         print("  ----------------------------") if debug else None
         print(f"Term: {query_term} | Recall: {recall}") if debug else None
 
-        term_with_sims = list(zip([terms[idx] for idx in result[:10]] , sims))
-        term_with_sims_gt = list(zip([terms[idx] for idx in result_gt[:10]] , sims_gt))
+        # term_with_sims = list(zip([terms[idx] for idx in result[:10]] , sims))
+        # term_with_sims_gt = list(zip([terms[idx] for idx in result_gt[:10]] , sims_gt))
 
-        term_with_sims.sort(key=lambda x: x[1], reverse=False)
-        term_with_sims_gt.sort(key=lambda x: x[1], reverse=True)
+        # term_with_sims.sort(key=lambda x: x[1], reverse=False)
+        # term_with_sims_gt.sort(key=lambda x: x[1], reverse=True)
 
-        print(f"LSH: {term_with_sims}") if debug else None
-        print(f" GT: {term_with_sims_gt}") if debug else None
+        # print(f"LSH: {term_with_sims}") if debug else None
+        # print(f" GT: {term_with_sims_gt}") if debug else None
     avg_recall_10 /= len(query_idxs)
     avg_recall_max /= len(query_idxs)
 
