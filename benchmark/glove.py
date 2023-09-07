@@ -123,7 +123,18 @@ def parse_algorithm_args():
     return args
 
 
-def get_test_algorithms(cmd_args):
+def test_train_split(terms, vectors, num_queries):
+    """Split off num_queries from vectors and remove them."""
+    query_idxs = np.random.randint(0, len(terms), num_queries)
+    query_vectors = vectors[query_idxs]
+    query_terms = [terms[idx] for idx in query_idxs]
+    # Remove from vectors
+    index_vectors = np.delete(vectors, query_idxs, axis=0)
+    index_terms = np.delete(terms, query_idxs, axis=0)
+    return query_terms, query_vectors, index_vectors, index_terms
+
+
+def get_test_algorithms(cmd_args, terms, vectors):
     for query_method in cmd_args.algorithm:
         if query_method in ["lsh_pure_python", "lsh_pure_c", "lsh_rerank_cand"]:
             fronts = cmd_args.num_fronts
@@ -163,9 +174,8 @@ def get_test_algorithms(cmd_args):
 
 
 def benchmark(terms, vectors, query_fn, workers,
-              debug=False, ground_truth=False, num_queries=50):
+              debug=False, ground_truth=True, num_queries=50):
 
-    # Randomly select N terms
     query_idxs = np.random.randint(0, len(terms), size=num_queries)
 
     # Collect groundtruths
@@ -236,14 +246,14 @@ def benchmark(terms, vectors, query_fn, workers,
         print("  ----------------------------") if debug else None
         print(f"Term: {query_term} | Recall: {recall}") if debug else None
 
-        # term_with_sims = list(zip([terms[idx] for idx in result[:10]] , sims))
-        # term_with_sims_gt = list(zip([terms[idx] for idx in result_gt[:10]] , sims_gt))
+        term_with_sims = list(zip([terms[idx] for idx in result[:10]] , sims))
+        term_with_sims_gt = list(zip([terms[idx] for idx in result_gt[:10]] , sims_gt))
 
-        # term_with_sims.sort(key=lambda x: x[1], reverse=False)
-        # term_with_sims_gt.sort(key=lambda x: x[1], reverse=True)
+        term_with_sims.sort(key=lambda x: x[1], reverse=False)
+        term_with_sims_gt.sort(key=lambda x: x[1], reverse=True)
 
-        # print(f"LSH: {term_with_sims}") if debug else None
-        # print(f" GT: {term_with_sims_gt}") if debug else None
+        print(f"LSH: {term_with_sims}") if debug else None
+        print(f" GT: {term_with_sims_gt}") if debug else None
     avg_recall_10 /= len(query_idxs)
     avg_recall_max /= len(query_idxs)
 
@@ -281,23 +291,31 @@ def load_or_build_index(vectors, num_projections=640):
         return hashes, projs
 
 
-if __name__ == "__main__":
+def main():
     terms, vectors = glove()
     cmd_args = parse_algorithm_args()
 
     if cmd_args.seed is not None:
         np.random.seed(cmd_args.seed)
 
+    # query_terms, query_vectors, index_terms, index_vectors = test_train_split(terms, vectors, cmd_args.query_size)
+
     results = []
-    for name, query_fn in get_test_algorithms(cmd_args):
+    for name, query_fn in get_test_algorithms(cmd_args, terms, vectors):
         print(f"Running {name}")
-        results.append((name, benchmark(terms, vectors, query_fn,
-                        workers=cmd_args.workers[0], debug=cmd_args.verbose,
-                        num_queries=cmd_args.num_queries)))
+        results.append((name, benchmark(terms, vectors,
+                                        query_fn=query_fn,
+                                        workers=cmd_args.workers[0],
+                                        debug=cmd_args.verbose,
+                                        num_queries=cmd_args.num_queries)))
 
     for name, result in results:
         qps, recall = result
         print(f"Algo: {name} -- QPS {qps} -- Recall {recall}")
+
+
+if __name__ == "__main__":
+    main()
 
 
 # LSH Benchmarks

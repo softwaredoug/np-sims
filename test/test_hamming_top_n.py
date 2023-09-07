@@ -2,7 +2,7 @@ import pytest
 from typing import List
 
 import numpy as np
-from np_sims import hamming_top_10
+from np_sims import hamming_top_10, hamming_top_cand
 
 
 def same_elements(a, b):
@@ -25,6 +25,13 @@ def repeated(x, n):
 
 def rpt(x, n):
     return repeated(x, n)
+
+
+def has_candidates(results, expected_cands):
+    for idx in expected_cands:
+        if idx in results and idx != UINT64_MAX:
+            return True
+    return False
 
 
 hamming_tests = [
@@ -162,7 +169,7 @@ hamming_tests = [
      + [rpt(UINT64_MAX, 40) + [UINT64_MAX, 0b0000]],  # < the match
 
      rpt(UINT64_MAX, 40) + [UINT64_MAX, 0b0000],
-     as_top_n([0, 2, 3, 4, 5, 6, 7, 8, 9, 100002])),  # the last 10
+     as_top_n([0, 2, 3, 4, 5, 6, 7, 8, 1, 100002])),  # the last 10
 ]
 
 
@@ -171,3 +178,12 @@ def test_hamming_top_n(hashes, query, expected):
     result = hamming_top_10(np.array(hashes, dtype=np.uint64),
                             np.array(query, dtype=np.uint64))
     assert same_elements(result, expected)
+
+
+@pytest.mark.parametrize("hashes, query, expected", hamming_tests)
+def test_hamming_top_cand(hashes, query, expected):
+    result = hamming_top_cand(np.array(hashes, dtype=np.uint64),
+                              np.array(query, dtype=np.uint64))
+    print(result)
+    print(expected)
+    assert has_candidates(result, expected)

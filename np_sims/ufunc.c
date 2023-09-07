@@ -4,6 +4,7 @@
 #include "numpy/ufuncobject.h"
 #include "numpy/halffloat.h"
 #include "numpy/npy_math.h"
+#include "heap.h"
 #include <math.h>
 #include <stdio.h>
 
@@ -12,16 +13,8 @@
 #endif
 
 /*
- * multi_arg_logit.c
- * This is the C code for creating your own
- * NumPy ufunc for a multiple argument, multiple
- * return value ufunc. The places where the
- * ufunc computation is carried out are marked
- * with comments.
+ * C code for hamming distance similarity
  *
- * Details explaining the Python-C API can be found under
- * 'Extending and Embedding' and 'Python/C API' at
- * docs.python.org.
  */
 
 static PyMethodDef LogitMethods[] = {
@@ -107,19 +100,17 @@ static void hamming(char **args, const npy_intp *dimensions,
 
 #define TOP_N_QUEUE(N) \
 struct Top ## N ## Queue { \
-    uint16_t size; \
-    uint16_t out_queue_end; \
-    uint16_t worst_in_queue; \
-    uint16_t worst_in_queue_index; \
+    uint64_t size; \
+    uint64_t out_queue_end; \
+    uint64_t worst_in_queue_index; \
     uint64_t* best_rows; \
-    uint16_t top_n_sim_scores[N]; \
+    uint64_t top_n_sim_scores[N]; \
 }; \
 const struct Top ## N ## Queue defaults_## N = { \
     .size = N, \
     .out_queue_end = 0, \
     .best_rows = NULL, \
-    .worst_in_queue = UINT16_MAX, \
-    .worst_in_queue_index = 0 \
+    .worst_in_queue_index = (N - 1) \
 }; \
 \
 struct Top ## N ## Queue create_ ## N ## _queue(uint64_t* best_rows) { \
@@ -127,7 +118,7 @@ struct Top ## N ## Queue create_ ## N ## _queue(uint64_t* best_rows) { \
     queue.best_rows = best_rows; \
     /* Initialize to UINT64_MAX*/ \
     for (int i = 0; i < N; i++) { \
-        queue.top_n_sim_scores[i] = UINT16_MAX; \
+        queue.top_n_sim_scores[i] = UINT64_MAX; \
         queue.best_rows[i] = UINT64_MAX; \
     } \
     return queue; \
@@ -149,49 +140,64 @@ TOP_N_QUEUE(1000)
 
 static void maybe_insert_into_queue_10(struct Top10Queue* queue, uint64_t sim_score,
                                     uint64_t row_index) {
-   if (sim_score < queue->worst_in_queue) {
-     if (queue->out_queue_end < queue->size) {
+   if (sim_score < queue->top_n_sim_scores[queue->worst_in_queue_index]) {
+     if (queue->out_queue_end < 9) {
        queue->best_rows[queue->out_queue_end] = row_index;
        queue->top_n_sim_scores[queue->out_queue_end] = sim_score;
        queue->out_queue_end++;
      }
      else {
-       queue->best_rows[queue->worst_in_queue_index] = row_index;
        queue->top_n_sim_scores[queue->worst_in_queue_index] = sim_score;
-     }
-     /* find new worst_in_queue */
-     queue->worst_in_queue = 0;
-     for (uint16_t output_idx = 0; output_idx < queue->size; output_idx++) {
-       if (queue->top_n_sim_scores[output_idx] > queue->worst_in_queue) {
-         queue->worst_in_queue = queue->top_n_sim_scores[output_idx];
-         queue->worst_in_queue_index = output_idx;
+       queue->best_rows[queue->worst_in_queue_index] = row_index;
+
+       if (queue->top_n_sim_scores[0] > queue->top_n_sim_scores[queue->worst_in_queue_index]) {
+         queue->worst_in_queue_index = 0;
+       }
+       if (queue->top_n_sim_scores[1] > queue->top_n_sim_scores[queue->worst_in_queue_index]) {
+         queue->worst_in_queue_index = 1;
+       }
+       if (queue->top_n_sim_scores[2] > queue->top_n_sim_scores[queue->worst_in_queue_index]) {
+         queue->worst_in_queue_index = 2;
+       }
+       if (queue->top_n_sim_scores[3] > queue->top_n_sim_scores[queue->worst_in_queue_index]) {
+         queue->worst_in_queue_index = 3;
+       }
+       if (queue->top_n_sim_scores[4] > queue->top_n_sim_scores[queue->worst_in_queue_index]) {
+         queue->worst_in_queue_index = 4;
+       }
+       if (queue->top_n_sim_scores[5] > queue->top_n_sim_scores[queue->worst_in_queue_index]) {
+         queue->worst_in_queue_index = 5;
+       }
+       if (queue->top_n_sim_scores[6] > queue->top_n_sim_scores[queue->worst_in_queue_index]) {
+         queue->worst_in_queue_index = 6;
+       }
+       if (queue->top_n_sim_scores[7] > queue->top_n_sim_scores[queue->worst_in_queue_index]) {
+         queue->worst_in_queue_index = 7;
+       }
+       if (queue->top_n_sim_scores[8] > queue->top_n_sim_scores[queue->worst_in_queue_index]) {
+         queue->worst_in_queue_index = 8;
+       }
+       if (queue->top_n_sim_scores[9] > queue->top_n_sim_scores[queue->worst_in_queue_index]) {
+         queue->worst_in_queue_index = 9;
        }
      }
    }
 }
 
-
 static void maybe_insert_into_queue_1000(struct Top1000Queue* queue, uint64_t sim_score,
-                                    uint64_t row_index) {
-   if (sim_score < queue->worst_in_queue) {
-     if (queue->out_queue_end < queue->size) {
+                                         uint64_t row_index) {
+   if (sim_score < queue->top_n_sim_scores[queue->worst_in_queue_index]) {
+     if (queue->out_queue_end < 999) {
        queue->best_rows[queue->out_queue_end] = row_index;
        queue->top_n_sim_scores[queue->out_queue_end] = sim_score;
-       queue->worst_in_queue_index = queue->out_queue_end;
-       queue->worst_in_queue = sim_score;
        queue->out_queue_end++;
+       if (queue->out_queue_end == 1000) {
+         heapify(queue->top_n_sim_scores, queue->best_rows, 1000, 0);
+       }
      }
      else {
-       queue->best_rows[queue->worst_in_queue_index] = row_index;
-       queue->top_n_sim_scores[queue->worst_in_queue_index] = sim_score;
-       /* find new worst_in_queue */
-       queue->worst_in_queue = 0;
-       for (uint16_t output_idx = 0; output_idx < queue->size; output_idx++) {
-         if (queue->top_n_sim_scores[output_idx] > queue->worst_in_queue) {
-           queue->worst_in_queue = queue->top_n_sim_scores[output_idx];
-           queue->worst_in_queue_index = output_idx;
-         }
-       }
+       maybe_push_heap(queue->top_n_sim_scores, queue->best_rows, 1000,
+                       sim_score, row_index);
      }
    }
 }
@@ -509,7 +515,6 @@ static void hamming_top_10(char **args, const npy_intp *dimensions,
 static void hamming_top_cand(char **args, const npy_intp *dimensions,
                              const npy_intp *steps, void *data)
 {
-
     /* npy_intp n = dimensions[0]; <<- not sure what this is */
     npy_intp num_hashes = dimensions[1];  /* appears to be size of first dimension */
     npy_intp query_len = dimensions[2];  /* appears to be size of second dimension */
