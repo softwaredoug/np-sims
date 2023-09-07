@@ -98,110 +98,12 @@ static void hamming(char **args, const npy_intp *dimensions,
 
 }
 
-#define TOP_N_QUEUE(N) \
-struct Top ## N ## Queue { \
-    uint64_t size; \
-    uint64_t out_queue_end; \
-    uint64_t worst_in_queue_index; \
-    uint64_t* best_rows; \
-    uint64_t top_n_sim_scores[N]; \
-}; \
-const struct Top ## N ## Queue defaults_## N = { \
-    .size = N, \
-    .out_queue_end = 0, \
-    .best_rows = NULL, \
-    .worst_in_queue_index = (N - 1) \
-}; \
-\
-struct Top ## N ## Queue create_ ## N ## _queue(uint64_t* best_rows) { \
-    struct Top ## N ## Queue queue = defaults_## N; \
-    queue.best_rows = best_rows; \
-    /* Initialize to UINT64_MAX*/ \
-    for (int i = 0; i < N; i++) { \
-        queue.top_n_sim_scores[i] = UINT64_MAX; \
-        queue.best_rows[i] = UINT64_MAX; \
-    } \
-    return queue; \
-} \
-\
-
-
-TOP_N_QUEUE(10)
-TOP_N_QUEUE(1000)
-
-
-
 /*
  *
  *
  *
  *
  */
-
-static void maybe_insert_into_queue_10(struct Top10Queue* queue, uint64_t sim_score,
-                                    uint64_t row_index) {
-   if (sim_score < queue->top_n_sim_scores[queue->worst_in_queue_index]) {
-     if (queue->out_queue_end < 9) {
-       queue->best_rows[queue->out_queue_end] = row_index;
-       queue->top_n_sim_scores[queue->out_queue_end] = sim_score;
-       queue->out_queue_end++;
-     }
-     else {
-       queue->top_n_sim_scores[queue->worst_in_queue_index] = sim_score;
-       queue->best_rows[queue->worst_in_queue_index] = row_index;
-
-       if (queue->top_n_sim_scores[0] > queue->top_n_sim_scores[queue->worst_in_queue_index]) {
-         queue->worst_in_queue_index = 0;
-       }
-       if (queue->top_n_sim_scores[1] > queue->top_n_sim_scores[queue->worst_in_queue_index]) {
-         queue->worst_in_queue_index = 1;
-       }
-       if (queue->top_n_sim_scores[2] > queue->top_n_sim_scores[queue->worst_in_queue_index]) {
-         queue->worst_in_queue_index = 2;
-       }
-       if (queue->top_n_sim_scores[3] > queue->top_n_sim_scores[queue->worst_in_queue_index]) {
-         queue->worst_in_queue_index = 3;
-       }
-       if (queue->top_n_sim_scores[4] > queue->top_n_sim_scores[queue->worst_in_queue_index]) {
-         queue->worst_in_queue_index = 4;
-       }
-       if (queue->top_n_sim_scores[5] > queue->top_n_sim_scores[queue->worst_in_queue_index]) {
-         queue->worst_in_queue_index = 5;
-       }
-       if (queue->top_n_sim_scores[6] > queue->top_n_sim_scores[queue->worst_in_queue_index]) {
-         queue->worst_in_queue_index = 6;
-       }
-       if (queue->top_n_sim_scores[7] > queue->top_n_sim_scores[queue->worst_in_queue_index]) {
-         queue->worst_in_queue_index = 7;
-       }
-       if (queue->top_n_sim_scores[8] > queue->top_n_sim_scores[queue->worst_in_queue_index]) {
-         queue->worst_in_queue_index = 8;
-       }
-       if (queue->top_n_sim_scores[9] > queue->top_n_sim_scores[queue->worst_in_queue_index]) {
-         queue->worst_in_queue_index = 9;
-       }
-     }
-   }
-}
-
-static void maybe_insert_into_queue_1000(struct Top1000Queue* queue, uint64_t sim_score,
-                                         uint64_t row_index) {
-   if (sim_score < queue->top_n_sim_scores[queue->worst_in_queue_index]) {
-     if (queue->out_queue_end < 999) {
-       queue->best_rows[queue->out_queue_end] = row_index;
-       queue->top_n_sim_scores[queue->out_queue_end] = sim_score;
-       queue->out_queue_end++;
-       if (queue->out_queue_end == 1000) {
-         heapify(queue->top_n_sim_scores, queue->best_rows, 1000, 0);
-       }
-     }
-     else {
-       maybe_push_heap(queue->top_n_sim_scores, queue->best_rows, 1000,
-                       sim_score, row_index);
-     }
-   }
-}
-
 
 
 /*#define EARLY_EXIT*/
@@ -215,23 +117,23 @@ static void maybe_insert_into_queue_1000(struct Top1000Queue* queue, uint64_t si
 #define HAMMING_TOP_N_HASH_FLAT(N, QUEUE_LEN, BODY) \
 void hamming_top_ ## QUEUE_LEN ## _hash_##N(uint64_t* hashes, uint64_t* query, \
                                       uint64_t num_hashes, uint64_t* best_rows) { \
-    struct Top ## QUEUE_LEN ## Queue queue = create_ ## QUEUE_LEN ## _queue(best_rows); \
+    init_heap(&queue, best_rows, QUEUE_LEN); \
     uint64_t sum = 0; \
     uint64_t i = 0; \
     const uint64_t end = (num_hashes - (num_hashes % 4)); \
     for (; i < end; i+=4) { \
       BODY; \
-      maybe_insert_into_queue_## QUEUE_LEN (&queue, sum, (i)); \
+      heap_insert(&queue, i, sum); \
       BODY; \
-      maybe_insert_into_queue_## QUEUE_LEN (&queue, sum, (i+1)); \
+      heap_insert(&queue, i, sum); \
       BODY; \
-      maybe_insert_into_queue_## QUEUE_LEN (&queue, sum, (i+2)); \
+      heap_insert(&queue, i, sum); \
       BODY; \
-      maybe_insert_into_queue_## QUEUE_LEN (&queue, sum, (i+3)); \
+      heap_insert(&queue, i, sum); \
     } \
     for (i = end; i < num_hashes; i++) { \
       BODY; \
-      maybe_insert_into_queue_## QUEUE_LEN (&queue, sum, i); \
+      heap_insert(&queue, i, sum); \
     } \
 }
 
@@ -239,11 +141,13 @@ void hamming_top_ ## QUEUE_LEN ## _hash_##N(uint64_t* hashes, uint64_t* query, \
 #define HAMMING_TOP_N_HASH(N, QUEUE_LEN, BODY) \
 void hamming_top_ ## QUEUE_LEN ## _hash_##N(uint64_t* hashes, uint64_t* query, \
                                       uint64_t num_hashes, uint64_t* best_rows) { \
-    struct Top ## QUEUE_LEN ## Queue queue = create_ ## QUEUE_LEN ## _queue(best_rows); \
+    struct Heap queue; \
+    uint64_t score_arr[QUEUE_LEN]; \
+    init_heap(&queue, best_rows, &score_arr, QUEUE_LEN); \
     uint64_t sum; \
     for (uint64_t i = 0; i < num_hashes; i++) { \
       BODY; \
-      maybe_insert_into_queue_## QUEUE_LEN (&queue, sum, (i)); \
+      heap_insert(&queue, i, sum); \
     } \
 }
 
@@ -442,7 +346,9 @@ HAMMING_TOP_N_HASH(10, 1000,
 
 void hamming_top_10_default(uint64_t* hashes, uint64_t* query, uint64_t* query_start,
                            uint64_t num_hashes, uint64_t query_len, uint64_t* best_rows) {
-    struct Top10Queue queue = create_10_queue(best_rows);
+    struct Heap queue;
+    uint64_t score_arr[10];
+    init_heap(&queue, best_rows, &score_arr, 10); \
     uint64_t sum = 0;
 
     for (uint64_t i = 0; i < num_hashes; i++) {
@@ -452,7 +358,7 @@ void hamming_top_10_default(uint64_t* hashes, uint64_t* query, uint64_t* query_s
         for (uint64_t j = 0; j < query_len; j++) {
             sum += popcount((*hashes++) ^ (*query++));
         }
-        maybe_insert_into_queue_10(&queue, sum, i);
+        heap_insert(&queue, i, sum);
     }
 }
 

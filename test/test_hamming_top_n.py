@@ -169,7 +169,7 @@ hamming_tests = [
      + [rpt(UINT64_MAX, 40) + [UINT64_MAX, 0b0000]],  # < the match
 
      rpt(UINT64_MAX, 40) + [UINT64_MAX, 0b0000],
-     as_top_n([0, 2, 3, 4, 5, 6, 7, 8, 1, 100002])),  # the last 10
+     as_top_n([0, 2, 3, 4, 5, 6, 7, 8, 9, 100002])),  # the last 10
 ]
 
 
