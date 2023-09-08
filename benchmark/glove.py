@@ -355,3 +355,14 @@ if __name__ == "__main__":
 # Algo: lsh_pure_c_640 -- QPS 348.9405170382391 -- Recall 0.4237000000000006
 # Algo: lsh_pure_c_1280 -- QPS 145.09469040393756 -- Recall 0.5310999999999997
 # Algo: lsh_pure_c_2560 -- QPS 83.26799802170994 -- Recall 0.6331999999999985
+#
+# -------------------------------
+# Searching for candidates
+# Algo: lsh_rerank_cand_1280_fronts_64 -- QPS 218.40999836665665 -- Recall 0.2712666666666681
+# Algo: lsh_rerank_cand_1280_fronts_128 -- QPS 224.90128801255102 -- Recall 0.390800000000002
+# Algo: lsh_rerank_cand_1280_fronts_256 -- QPS 183.32656501808452 -- Recall 0.4893333333333336
+# Algo: lsh_rerank_cand_1280_fronts_512 -- QPS 165.41776558772622 -- Recall 0.5316666666666657
+# Algo: lsh_rerank_cand_2560_fronts_64 -- QPS 268.8530955127846 -- Recall 0.2696666666666683
+# Algo: lsh_rerank_cand_2560_fronts_128 -- QPS 261.7993475133001 -- Recall 0.4059333333333345
+# Algo: lsh_rerank_cand_2560_fronts_256 -- QPS 229.8365892507556 -- Recall 0.5369999999999988
+# Algo: lsh_rerank_cand_2560_fronts_512 -- QPS 183.76697114023054 -- Recall 0.6033999999999983
