@@ -114,30 +114,6 @@ static void hamming(char **args, const npy_intp *dimensions,
 
 
 /* loop unrolled versions of hamming sim computation */
-#define HAMMING_TOP_N_HASH_FLAT(N, QUEUE_LEN, BODY) \
-void hamming_top_ ## QUEUE_LEN ## _hash_##N(uint64_t* hashes, uint64_t* query, \
-                                      uint64_t num_hashes, uint64_t* best_rows) { \
-    init_heap(&queue, best_rows, QUEUE_LEN); \
-    uint64_t sum = 0; \
-    uint64_t i = 0; \
-    const uint64_t end = (num_hashes - (num_hashes % 4)); \
-    for (; i < end; i+=4) { \
-      BODY; \
-      heap_insert(&queue, i, sum); \
-      BODY; \
-      heap_insert(&queue, i, sum); \
-      BODY; \
-      heap_insert(&queue, i, sum); \
-      BODY; \
-      heap_insert(&queue, i, sum); \
-    } \
-    for (i = end; i < num_hashes; i++) { \
-      BODY; \
-      heap_insert(&queue, i, sum); \
-    } \
-}
-
-/* loop unrolled versions of hamming sim computation */
 #define HAMMING_TOP_N_HASH(N, QUEUE_LEN, BODY) \
 void hamming_top_ ## QUEUE_LEN ## _hash_##N(uint64_t* hashes, uint64_t* query, \
                                       uint64_t num_hashes, uint64_t* best_rows) { \
@@ -147,7 +123,7 @@ void hamming_top_ ## QUEUE_LEN ## _hash_##N(uint64_t* hashes, uint64_t* query, \
     uint64_t sum; \
     for (uint64_t i = 0; i < num_hashes; i++) { \
       BODY; \
-      heap_insert(&queue, i, sum); \
+      heap_insert ## QUEUE_LEN(&queue, i, sum); \
     } \
 }
 
@@ -358,7 +334,7 @@ void hamming_top_10_default(uint64_t* hashes, uint64_t* query, uint64_t* query_s
         for (uint64_t j = 0; j < query_len; j++) {
             sum += popcount((*hashes++) ^ (*query++));
         }
-        heap_insert(&queue, i, sum);
+        heap_insert10(&queue, i, sum);
     }
 }
 

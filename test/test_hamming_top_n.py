@@ -184,6 +184,4 @@ def test_hamming_top_n(hashes, query, expected):
 def test_hamming_top_cand(hashes, query, expected):
     result = hamming_top_cand(np.array(hashes, dtype=np.uint64),
                               np.array(query, dtype=np.uint64))
-    print(result)
-    print(expected)
     assert has_candidates(result, expected)

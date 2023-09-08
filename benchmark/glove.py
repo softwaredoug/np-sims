@@ -174,7 +174,7 @@ def get_test_algorithms(cmd_args, terms, vectors):
 
 
 def benchmark(terms, vectors, query_fn, workers,
-              debug=False, ground_truth=True, num_queries=50):
+              debug=False, ground_truth=False, num_queries=50):
 
     query_idxs = np.random.randint(0, len(terms), size=num_queries)
 
@@ -246,6 +246,9 @@ def benchmark(terms, vectors, query_fn, workers,
         print("  ----------------------------") if debug else None
         print(f"Term: {query_term} | Recall: {recall}") if debug else None
 
+        for idx, res in enumerate(result):
+            if res > len(terms):
+                result[idx] = 0
         term_with_sims = list(zip([terms[idx] for idx in result[:10]] , sims))
         term_with_sims_gt = list(zip([terms[idx] for idx in result_gt[:10]] , sims_gt))
 
