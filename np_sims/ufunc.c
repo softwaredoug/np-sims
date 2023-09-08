@@ -424,6 +424,22 @@ void hamming_top_10_default(uint64_t* hashes, uint64_t* query, uint64_t* query_s
     }
 }
 
+void hamming_top_1000_default(uint64_t* hashes, uint64_t* query, uint64_t* query_start,
+                              uint64_t num_hashes, uint64_t query_len, uint64_t* best_rows) {
+    struct Top1000Queue queue = create_1000_queue(best_rows);
+    uint64_t sum = 0;
+
+    for (uint64_t i = 0; i < num_hashes; i++) {
+        sum = 0;
+        query = query_start;
+        #pragma clang loop vectorize(enable)
+        for (uint64_t j = 0; j < query_len; j++) {
+            sum += popcount((*hashes++) ^ (*query++));
+        }
+        maybe_insert_into_queue_1000(&queue, sum, i);
+    }
+}
+
 
 static void hamming_top_10(char **args, const npy_intp *dimensions,
                            const npy_intp *steps, void *data)
@@ -487,10 +503,10 @@ static void hamming_top_cand(char **args, const npy_intp *dimensions,
     /* npy_intp n = dimensions[0]; <<- not sure what this is */
     npy_intp num_hashes = dimensions[1];  /* appears to be size of first dimension */
     npy_intp query_len = dimensions[2];  /* appears to be size of second dimension */
-    npy_intp out_len = dimensions[3];  /* appears to be size of third dimension */
     uint64_t *hashes = __builtin_assume_aligned((uint64_t*)args[0], 16);
     uint64_t *query =  __builtin_assume_aligned((uint64_t*)args[1], 16);
     uint64_t *best_rows = __builtin_assume_aligned((uint64_t*)args[2], 16);
+    uint64_t *query_start = __builtin_assume_aligned((uint64_t*)args[1], 16);
 
     PyThreadState *_save = NULL;
     if (PyGILState_Check()) { _save = PyEval_SaveThread(); }
@@ -527,6 +543,7 @@ static void hamming_top_cand(char **args, const npy_intp *dimensions,
             hamming_top_1000_hash_10(hashes, query, num_hashes, best_rows);
             break;
         default:
+            hamming_top_1000_default(hashes, query, query_start, num_hashes, query_len, best_rows);
             break;
     }
 

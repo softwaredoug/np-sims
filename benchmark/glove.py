@@ -1,7 +1,7 @@
 import numpy as np
 import argparse
 
-from data_dir import read_np, write_np, read_lines, write_lines, lines_of
+from data_dir import read_np, write_np, read_lines, write_lines, lines_of, read_pickle, write_pickle
 from time import perf_counter
 import cProfile
 import pstats
@@ -55,11 +55,18 @@ def glove(num_to_sample=10000000):
     return terms, np.array(vectors)
 
 
-def most_similar_cos(vectors, query_idx):
-    query_vector = vectors[query_idx]
-    sims = np.dot(vectors, query_vector)
-    top_idxs = np.argsort(sims)[::-1][0:10]
-    return top_idxs, sims[top_idxs]
+def most_similar_cos(index_vectors: np.ndarray[np.float32],
+                     query_vectors: np.ndarray[np.float32],
+                     n=10):
+    results_gt = {}
+    for idx, query_vector in enumerate(query_vectors):
+        dotted = np.dot(index_vectors, query_vector)
+        top_idxs = np.argsort(dotted)[::-1][:n]
+        result = list(zip(top_idxs,
+                          dotted[top_idxs]))
+        results_gt[idx] = result
+
+    return results_gt
 
 
 def lsh_query_fn(query_method, hashes, projs, num_fronts=None):
@@ -123,22 +130,23 @@ def parse_algorithm_args():
     return args
 
 
-def get_test_algorithms(cmd_args):
+def get_test_algorithms(cmd_args, index_terms, index_vectors):
     for query_method in cmd_args.algorithm:
         if query_method in ["lsh_pure_python", "lsh_pure_c", "lsh_rerank_cand"]:
             fronts = cmd_args.num_fronts
             if fronts is None:
-                fronts = [None] * len(cmd_args.num_projections)
-            for fronts, projections in zip(fronts, cmd_args.num_projections):
-                num_projections = int(projections)
-                print("----------------------")
-                print(f"Running with {num_projections} projections")
+                fronts = [None]
+            for projections in cmd_args.num_projections:
+                for front in fronts:
+                    num_projections = int(projections)
+                    print("----------------------")
+                    print(f"Running with {num_projections} projections")
 
-                hashes, projs = load_or_build_index(vectors, num_projections)
-                name = f"{query_method}_{num_projections}"
-                if fronts is not None:
-                    name += f"_fronts_{fronts}"
-                yield name, lsh_query_fn(query_method, hashes, projs, fronts)
+                    hashes, projs = load_or_build_index(index_vectors, num_projections, cmd_args.seed)
+                    name = f"{query_method}_{num_projections}"
+                    if front is not None:
+                        name += f"_fronts_{front}"
+                    yield name, lsh_query_fn(query_method, hashes, projs, front)
         elif query_method in ["kd_tree", "rp_tree", "pca_tree"]:
             start = perf_counter()
             chooserule = None
@@ -149,38 +157,34 @@ def get_test_algorithms(cmd_args):
             elif query_method == "pca_tree":
                 chooserule = rptree_pca_chooserule
 
-            tree = RandomProjectionTree.build(vectors,
+            tree = RandomProjectionTree.build(index_vectors,
                                               depth=cmd_args.max_depth,
                                               max_leaf_size=cmd_args.max_leaf_size,
                                               chooserule=chooserule)
             print(f"Building tree took {perf_counter() - start} seconds")
             # tree.save('data/rp_tree.pkl')
-            term_idx = terms.index("king\n")
-            tree.debug_dump(terms, vectors, term_idx)
             yield "rp_tree", rp_tree_query_fn(query_method, tree)
         else:
             raise ValueError(f"Unknown algorithm: {query_method}")
 
 
-def benchmark(terms, vectors, query_fn, workers, debug=False, num_queries=50):
+def benchmark(index_terms,
+              query_terms,
+              results_gt,
+              query_vectors,
+              query_fn, workers, debug=False):
 
-    # Randomly select N terms
-    query_idxs = np.random.randint(0, len(terms), size=num_queries)
+    if len(query_vectors) != len(query_terms):
+        raise ValueError("Query vectors and terms must be the same length")
 
-    # Collect groundtruths
-    gt_start = perf_counter()
-    gt_time = 0
-    results_gt = {}
-    for query_idx in query_idxs:
-        result, sims = most_similar_cos(vectors, query_idx)
-        gt_time += (perf_counter() - gt_start)
-        results_gt[query_idx] = list(zip(result, sims))
+    if len(query_vectors) != len(results_gt):
+        raise ValueError("Query vectors and ground truth results must be the same length")
 
-    def query(query_idx):
+    def query(query_idx, query_vector):
         pr = cProfile.Profile()
         pr.enable()
         my_start = perf_counter()
-        result, sims = query_fn(vectors[query_idx])
+        result, sims = query_fn(query_vector)
         pr.disable()
         return query_idx, result, sims, perf_counter() - my_start, pr
 
@@ -191,8 +195,8 @@ def benchmark(terms, vectors, query_fn, workers, debug=False, num_queries=50):
     futures = []
     with ThreadPoolExecutor(max_workers=workers) as executor:
         start = perf_counter()
-        for query_idx in query_idxs:
-            futures.append(executor.submit(query, query_idx))
+        for idx, query_vector in enumerate(query_vectors):
+            futures.append(executor.submit(query, idx, query_vector))
 
         pr_stats_all = pstats.Stats()
         for future in as_completed(futures):
@@ -212,7 +216,7 @@ def benchmark(terms, vectors, query_fn, workers, debug=False, num_queries=50):
     avg_recall_10 = 0
     avg_recall_max = 0
     max_len = 0
-    for query_idx in query_idxs:
+    for query_idx, _ in enumerate(query_terms):
         result = results[query_idx]
         result_gt = results_gt[query_idx]
 
@@ -225,74 +229,107 @@ def benchmark(terms, vectors, query_fn, workers, debug=False, num_queries=50):
         recall_10 = len(set(result[:10]).intersection(set(result_gt))) / len(result_gt)
         recall_max = len(set(result).intersection(set(result_gt))) / len(result_gt)
         max_len = len(result)
-        query_term = terms[query_idx]
+        query_term = query_terms[query_idx]
         avg_recall_10 += recall_10
         avg_recall_max += recall_max
         print("  ----------------------------") if debug else None
         print(f"Term: {query_term} | Recall: {recall}") if debug else None
 
-        term_with_sims = list(zip([terms[idx] for idx in result[:10]] , sims))
-        term_with_sims_gt = list(zip([terms[idx] for idx in result_gt[:10]] , sims_gt))
+        term_with_sims = list(zip([index_terms[idx] for idx in result[:10]] , sims))
+        term_with_sims_gt = list(zip([index_terms[idx] for idx in result_gt[:10]] , sims_gt))
 
         term_with_sims.sort(key=lambda x: x[1], reverse=False)
         term_with_sims_gt.sort(key=lambda x: x[1], reverse=True)
 
         print(f"LSH: {term_with_sims}") if debug else None
         print(f" GT: {term_with_sims_gt}") if debug else None
-    avg_recall_10 /= len(query_idxs)
-    avg_recall_max /= len(query_idxs)
+    avg_recall_10 /= len(query_terms)
+    avg_recall_max /= len(query_terms)
 
-    qps = len(query_idxs) / execution_times
-    gt_qp = len(query_idxs) / gt_time
+    qps = len(query_terms) / execution_times
     pstats.Stats("top_n.prof").strip_dirs().sort_stats("cumulative").print_stats(20) if debug else None
-    print("Run num queries: ", len(query_idxs))
+    print("Run num queries: ", len(query_terms))
     print(f"Mean recall@10    : {avg_recall_10}")
     if max_len != 10:
         print(f"Mean recall@{max_len}>10: {avg_recall_max}")
-    print(f"     GT QPS       : {gt_qp}")
     print(f"        QPS       : {qps}")
     print("----------------------")
 
     return qps, avg_recall_10
 
 
-def load_or_build_index(vectors, num_projections=640):
-    dims = vectors.shape[1]
-    suffix = f"{len(vectors)}_{num_projections}_{dims}"
+def load_or_build_index(index_vectors, num_projections=640, seed=0):
+    dims = index_vectors.shape[1]
+    suffix = f"{len(index_vectors)}_{num_projections}_{dims}_{seed}"
     hashes_file = f"hashes_{suffix}"
     projs_file = f"projs_{suffix}"
 
     try:
+        print(f"checking for {hashes_file} and {projs_file}")
         hashes = read_np(hashes_file)
         projs = read_np(projs_file)
         print(f"loaded from {hashes_file} and {projs_file}")
         return hashes, projs
     except FileNotFoundError:
         projs = create_projections(num_projections, dims)
-        hashes = index(vectors, projs)
+        hashes = index(index_vectors, projs)
         write_np(hashes_file, hashes)
         write_np(projs_file, projs)
         print(f"saved {hashes_file} and {projs_file}")
         return hashes, projs
 
 
-if __name__ == "__main__":
+def test_train_split(terms, vectors, num_queries):
+    """Split off num_queries from vectors and remove them."""
+    query_idxs = np.random.randint(0, len(terms), num_queries)
+    query_vectors = vectors[query_idxs]
+    query_terms = [terms[idx] for idx in query_idxs]
+    # Remove from vectors
+    index_vectors = np.delete(vectors, query_idxs, axis=0)
+    index_terms = np.delete(terms, query_idxs, axis=0)
+    return query_terms, query_vectors, index_terms, index_vectors
+
+
+def main():
     terms, vectors = glove()
     cmd_args = parse_algorithm_args()
 
     if cmd_args.seed is not None:
         np.random.seed(cmd_args.seed)
 
+    query_terms, query_vectors, index_terms, index_vectors = test_train_split(terms, vectors, cmd_args.num_queries)
+    # Collect groundtruths,
+    print("Collecting groundtruths") if cmd_args.verbose else None
+    results_gt_key = f"results_gt_{len(query_terms)}_{cmd_args.seed}"
+    try:
+        results_gt = read_pickle(results_gt_key)
+        print(f"Loaded groundtruths from disk for seed {cmd_args.seed}")
+    except FileNotFoundError:
+        gt_start = perf_counter()
+        gt_time = 0
+        results_gt = most_similar_cos(index_vectors, query_vectors)
+        gt_time = (perf_counter() - gt_start)
+        write_pickle(results_gt_key, results_gt)
+        print(f"Groundtruths completed in {gt_time}") if cmd_args.verbose else None
+
     results = []
-    for name, query_fn in get_test_algorithms(cmd_args):
+    for name, query_fn in get_test_algorithms(cmd_args, index_terms, index_vectors):
         print(f"Running {name}")
-        results.append((name, benchmark(terms, vectors, query_fn,
-                        workers=cmd_args.workers[0], debug=cmd_args.verbose,
-                        num_queries=cmd_args.num_queries)))
+        results.append((name, benchmark(terms,
+                                        query_terms,
+                                        query_vectors=query_vectors,
+                                        results_gt=results_gt,
+                                        query_fn=query_fn,
+                                        workers=cmd_args.workers[0],
+                                        debug=cmd_args.verbose)))
 
     for name, result in results:
         qps, recall = result
         print(f"Algo: {name} -- QPS {qps} -- Recall {recall}")
+
+
+if __name__ == "__main__":
+    main()
 
 
 # LSH Benchmarks
@@ -321,7 +358,12 @@ if __name__ == "__main__":
 #    2560 projections -- QPS 29.13870808612148 -- Recall 0.6328999999999989
 #
 #
-#
+# flt pt
+# 300,32byte 9600
+# quantized
+# 300,8 byte 2400
+# hashed
+# 1280,2560 3840
 #
 # -------------------------------
 # Loop unrolled
@@ -356,13 +398,29 @@ if __name__ == "__main__":
 # Algo: lsh_pure_c_1280 -- QPS 145.09469040393756 -- Recall 0.5310999999999997
 # Algo: lsh_pure_c_2560 -- QPS 83.26799802170994 -- Recall 0.6331999999999985
 #
+# Threading enabled (ie not GIL bound)
+# Updated recall method
+#
+# Algo: lsh_pure_c_64 -- QPS 707.3645036054158 -- Recall 0.043933333333333435
+# Algo: lsh_pure_c_128 -- QPS 780.6277847673822 -- Recall 0.10239999999999934
+# Algo: lsh_pure_c_256 -- QPS 548.2359623972053 -- Recall 0.19813333333333322
+# Algo: lsh_pure_c_512 -- QPS 327.210887437234 -- Recall 0.3122000000000008
+# Algo: lsh_pure_c_640 -- QPS 287.4082539778733 -- Recall 0.34653333333333436
+# Algo: lsh_pure_c_1280 -- QPS 164.10641962159087 -- Recall 0.47446666666666776
+# Algo: lsh_pure_c_2560 -- QPS 111.8812981637067 -- Recall 0.5933333333333312
+#
 # -------------------------------
-# Searching for candidates
-# Algo: lsh_rerank_cand_1280_fronts_64 -- QPS 218.40999836665665 -- Recall 0.2712666666666681
-# Algo: lsh_rerank_cand_1280_fronts_128 -- QPS 224.90128801255102 -- Recall 0.390800000000002
-# Algo: lsh_rerank_cand_1280_fronts_256 -- QPS 183.32656501808452 -- Recall 0.4893333333333336
-# Algo: lsh_rerank_cand_1280_fronts_512 -- QPS 165.41776558772622 -- Recall 0.5316666666666657
-# Algo: lsh_rerank_cand_2560_fronts_64 -- QPS 268.8530955127846 -- Recall 0.2696666666666683
-# Algo: lsh_rerank_cand_2560_fronts_128 -- QPS 261.7993475133001 -- Recall 0.4059333333333345
-# Algo: lsh_rerank_cand_2560_fronts_256 -- QPS 229.8365892507556 -- Recall 0.5369999999999988
-# Algo: lsh_rerank_cand_2560_fronts_512 -- QPS 183.76697114023054 -- Recall 0.6033999999999983
+# Two-phase search
+#
+# Algo: lsh_rerank_cand_1280_fronts_64 -- QPS 308.03125264552216 -- Recall 0.17966666666666609
+# Algo: lsh_rerank_cand_1280_fronts_128 -- QPS 261.83048117080153 -- Recall 0.30773333333333397
+# Algo: lsh_rerank_cand_1280_fronts_256 -- QPS 260.0651854982354 -- Recall 0.4180666666666678
+# Algo: lsh_rerank_cand_1280_fronts_512 -- QPS 211.21008185405583 -- Recall 0.4691333333333339
+# Algo: lsh_rerank_cand_2560_fronts_64 -- QPS 272.33539032013886 -- Recall 0.18839999999999957
+# Algo: lsh_rerank_cand_2560_fronts_128 -- QPS 265.84977920343397 -- Recall 0.33446666666666747
+# Algo: lsh_rerank_cand_2560_fronts_256 -- QPS 251.65970447519737 -- Recall 0.4756666666666665
+# Algo: lsh_rerank_cand_2560_fronts_512 -- QPS 206.33482769603114 -- Recall 0.5661999999999984
+# Algo: lsh_rerank_cand_5120_fronts_64 -- QPS 275.8264905186566 -- Recall 0.1935999999999997
+# Algo: lsh_rerank_cand_5120_fronts_128 -- QPS 241.44565423219373 -- Recall 0.35133333333333394
+# Algo: lsh_rerank_cand_5120_fronts_256 -- QPS 240.99498798660204 -- Recall 0.5167999999999991
+# Algo: lsh_rerank_cand_5120_fronts_512 -- QPS 204.7312807722506 -- Recall 0.6385333333333298
