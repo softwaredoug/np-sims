@@ -92,3 +92,4 @@ def query_with_hamming_top_n_two_phase(vector, front_hashes, hashes, projections
 
 
 query = query_with_hamming_top_n  # Default query to fastest
+query_two_phase = query_with_hamming_top_n_two_phase
