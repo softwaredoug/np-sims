@@ -209,7 +209,7 @@ def random_partition_chooserule(vectors: np.ndarray) -> SplitRule:
     return RPTreeMaxSplitRule(projection)
 
 
-def _rptree_chooserule_with_median(vectors, projection) -> SplitRule:
+def _rptree_chooserule_with_median(vectors, projection, quantile_delta=0.25) -> SplitRule:
     # x = vectors[np.random.choice(len(vectors))]
     # farthest_from_x = vectors[np.dot(vectors, x).argmin()]
 
@@ -222,7 +222,7 @@ def _rptree_chooserule_with_median(vectors, projection) -> SplitRule:
     # delta = chosen * (6 * dist) / np.sqrt(vectors.shape[1])
 
     dotted = np.dot(vectors, projection)
-    quartiles = np.quantile(dotted, [0.25, 0.5, 0.75])
+    quartiles = np.quantile(dotted, [0.5 - quantile_delta, 0.5,  0.5 + quantile_delta])
 
     delta = np.random.uniform(low=quartiles[0], high=quartiles[2])
 
@@ -261,7 +261,7 @@ def rptree_proj_maxvar_chooserule(vectors: np.ndarray, projection=None) -> Split
     return _rptree_chooserule_with_median(vectors, max_var_proj)
 
 
-def rptree_pca_chooserule(vectors: np.ndarray) -> SplitRule:
+def rptree_pca_chooserule(vectors: np.ndarray, quantile_delta=0.25) -> SplitRule:
     """Find random projections using Principal Component Analysis."""
     # Center / norm the matrix to std dev
     means = vectors.mean(axis=0)
@@ -275,7 +275,7 @@ def rptree_pca_chooserule(vectors: np.ndarray) -> SplitRule:
     eigvecs = eigvecs[:, eigvals_sorted_indices]
 
     # Get the eigenvector with the largest eigenvalue
-    return _rptree_chooserule_with_median(vectors, eigvecs[eigvals.argmax()])
+    return _rptree_chooserule_with_median(vectors, eigvecs[eigvals.argmax()], quantile_delta=quantile_delta)
 
 
 class MultiProjectionSplitRule(SplitRule):
