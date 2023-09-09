@@ -13,6 +13,7 @@ As that idiot Farts McToots says: "It's a tree, but it's made of vectors."
 
 import numpy as np
 from np_sims.lsh import random_projection
+from np_sims.pca import pca
 
 # glove_queen = np.array([vectors[7613]])
 # glove_king = np.array([vectors[3598]])
@@ -263,19 +264,10 @@ def rptree_proj_maxvar_chooserule(vectors: np.ndarray, projection=None) -> Split
 
 def rptree_pca_chooserule(vectors: np.ndarray, quantile_delta=0.25) -> SplitRule:
     """Find random projections using Principal Component Analysis."""
-    # Center / norm the matrix to std dev
-    means = vectors.mean(axis=0)
-    vectors_ctr = vectors - means
-    # Get covariance matrix
-    cov = np.cov(vectors_ctr.T)
-    eigvals, eigvecs = np.linalg.eig(cov)
-
-    eigvals_sorted_indices = np.argsort(eigvals)[::-1]
-    eigvals = eigvals[eigvals_sorted_indices]
-    eigvecs = eigvecs[:, eigvals_sorted_indices]
+    components = pca(vectors)
 
     # Get the eigenvector with the largest eigenvalue
-    return _rptree_chooserule_with_median(vectors, eigvecs[eigvals.argmax()], quantile_delta=quantile_delta)
+    return _rptree_chooserule_with_median(vectors, components[0], quantile_delta=quantile_delta)
 
 
 class MultiProjectionSplitRule(SplitRule):
