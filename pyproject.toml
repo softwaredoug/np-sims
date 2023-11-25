@@ -1,0 +1,14 @@
+[build-system]
+build-backend = 'mesonpy'
+requires = ['meson-python']
+
+[project]
+name = 'npsims'
+version = '0.0.1'
+description = 'Our first Python project, using meson-python!'
+readme = 'README.md'
+requires-python = '>=3.8'
+license = {file = 'LICENSE'}
+authors = [
+  {name = 'Doug Turnbull', email = 'softwaredoug@gmail.com'},
+]
