@@ -1,6 +1,24 @@
 project('np_sims', 'c', version : '0.1')
 
-py = import('python').find_installation(pure: true)
+py = import('python').find_installation()
+
+# Check if VIRTUAL_ENV is set
+message('VIRTUAL_ENV:')
+
+
+# Check which python
+message('PRE INSTALL PYTHON HAS PACKAGES:')
+op = run_command(py, ['-m', 'pip', 'list'], capture: true, check: false)
+message(op.stderr().strip())
+
+message('INSTALLING NUMPY')
+op = run_command(py, ['-m', 'pip', 'install', 'numpy'], capture: true,  check: true)
+message(op.stdout().strip())
+
+# Check which python
+message('POST INSTALL PYTHON HAS PACKAGES:')
+op = run_command(py, ['-m', 'pip', 'list'], capture: true, check: true)
+message(op.stdout().strip())
 
 err_msg = run_command(py,
   ['-c', 'import numpy; print(numpy.get_include())'],
@@ -9,7 +27,7 @@ err_msg = run_command(py,
 ).stderr().strip()
 
 message('USING NUMPY INCLUDE DIR, STDERR:')
-message(incdir_numpy)
+message(err_msg)
 
 incdir_numpy = run_command(py,
   ['-c', 'import numpy; print(numpy.get_include())'],
