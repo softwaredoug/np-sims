@@ -5,6 +5,9 @@ py = import('python').find_installation()
 # Check if VIRTUAL_ENV is set
 message('VIRTUAL_ENV:')
 
+message('sys.path')
+op = run_command(py, ['-c', 'import sys; print(sys.path)'], capture: true, check: true)
+message(op.stdout().strip())
 
 # Check which python
 message('PRE INSTALL PYTHON HAS PACKAGES:')
