@@ -32,13 +32,28 @@ err_msg = run_command(py,
 message('USING NUMPY INCLUDE DIR, STDERR:')
 message(err_msg)
 
+# Get numpy include dir
 incdir_numpy = run_command(py,
   ['-c', 'import numpy; print(numpy.get_include())'],
   capture: true,
   check: false,
 ).stdout().strip()
 
-# incdir_numpy = 'venv/lib/python3.11/site-packages/numpy/core/include'
+
+# Remove current directory if it is in the include path
+current_dir = meson.current_source_dir()
+
+if incdir_numpy.startswith(current_dir)
+  incdir_numpy_prefix = incdir_numpy.split(current_dir)[1]
+  incdir_numpy = incdir_numpy_prefix
+endif
+
+if incdir_numpy.startswith('/')
+  incdir_numpy = incdir_numpy.substring(1)
+endif
+
+message('NUMPY INCNLUDE DIR:')
+message(incdir_numpy)
 
 includes = include_directories('np_sims', incdir_numpy)
 
